@@ -61,7 +61,10 @@ const ChatWithUser = () => {
   // Message Editing States
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingMessageText, setEditingMessageText] = useState("");
-  const [longPressedMessageId, setLongPressedMessageId] = useState(null);
+  
+  const countdownRef = useRef(null);
+  const [longPressedMessageText, setLongPressedMessageText] = useState("");
+  const [longPressedSenderId, setLongPressedSenderId] = useState(null);
 
   // Theme State
   const [theme, setTheme] = useState("light");
