@@ -65,6 +65,7 @@ const ChatWithUser = () => {
   const countdownRef = useRef(null);
   const [longPressedMessageText, setLongPressedMessageText] = useState("");
   const [longPressedSenderId, setLongPressedSenderId] = useState(null);
+  const [longPressedMessageId, setLongPressedMessageId] = useState(null);
 
   // Theme State
   const [theme, setTheme] = useState("light");
