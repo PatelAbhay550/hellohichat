@@ -42,7 +42,8 @@ const ChatWithUser = () => {
   const [countdown, setCountdown] = useState(30);
   const [showAudioPopup, setShowAudioPopup] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-
+const audioPlayerRef = useRef(null);
+  
   // Message Editing States
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingMessageText, setEditingMessageText] = useState("");
