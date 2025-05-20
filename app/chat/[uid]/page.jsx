@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
-import { auth, db, storage } from "@/lib/firebase"; // Assuming firebase is configured
+import { auth, db, storage } from "@/lib/firebase";
 import { IoIosArrowRoundBack } from "react-icons/io";
 import Link from "next/link";
 import {
@@ -31,8 +31,9 @@ import {
   FaEdit,
   FaTrashAlt,
   FaCheckDouble,
-  FaSun, // For theme toggle
-  FaMoon, // For theme toggle
+  FaSun,
+  FaMoon,
+  FaThumbtack,
 } from "react-icons/fa";
 
 const ChatWithUser = () => {
@@ -44,6 +45,7 @@ const ChatWithUser = () => {
   const [imagePreview, setImagePreview] = useState(null);
   const messagesEndRef = useRef(null);
   const [receiverData, setReceiverData] = useState(null);
+  const [pinnedMessages, setPinnedMessages] = useState([]);
 
   // Audio Recording States
   const [isRecording, setIsRecording] = useState(false);
@@ -56,31 +58,45 @@ const ChatWithUser = () => {
   const audioPlayerRef = useRef(null);
   const [currentPlayingAudioUrl, setCurrentPlayingAudioUrl] = useState(null);
 
-
   // Message Editing States
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingMessageText, setEditingMessageText] = useState("");
   const [longPressedMessageId, setLongPressedMessageId] = useState(null);
 
-  // const [audioChunks, setAudioChunks] = useState([]); // Not directly used, can be removed if recorder.ondataavailable handles chunks locally
-  const countdownRef = useRef(null);
-
   // Theme State
   const [theme, setTheme] = useState("light");
+  const [systemTheme, setSystemTheme] = useState(null);
 
+  // Fetch and listen to system theme changes
   useEffect(() => {
-    // Check local storage for saved theme
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    setSystemTheme(mediaQuery.matches ? "dark" : "light");
+    
+    const handler = (e) => {
+      setSystemTheme(e.matches ? "dark" : "light");
+      // Only update theme if user hasn't explicitly set a preference
+      const savedTheme = localStorage.getItem("chatTheme");
+      if (!savedTheme) {
+        setTheme(e.matches ? "dark" : "light");
+      }
+    };
+    
+    mediaQuery.addEventListener("change", handler);
+    return () => mediaQuery.removeEventListener("change", handler);
+  }, []);
+
+  // Initialize theme
+  useEffect(() => {
     const savedTheme = localStorage.getItem("chatTheme");
     if (savedTheme) {
       setTheme(savedTheme);
-    } else if (
-      window.matchMedia &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches
-    ) {
-      setTheme("dark"); // Prefer system theme if no preference saved
+    } else {
+      // Use system theme if no preference saved
+      setTheme(systemTheme || "light");
     }
-  }, []);
+  }, [systemTheme]);
 
+  // Apply theme
   useEffect(() => {
     if (theme === "dark") {
       document.documentElement.classList.add("dark");
@@ -112,6 +128,32 @@ const ChatWithUser = () => {
     };
     fetchReceiverData();
   }, [receiverUid]);
+
+  // Fetch pinned messages
+  useEffect(() => {
+    if (!currentUser || !receiverUid) return;
+
+    const fetchPinnedMessages = async () => {
+      try {
+        const pinnedRef = collection(db, "hellohi-pinned-messages");
+        const q = query(
+          pinnedRef,
+          where("chatId", "==", `${currentUser.uid}_${receiverUid}`)
+        );
+        
+        const unsub = onSnapshot(q, (snapshot) => {
+          const pinned = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setPinnedMessages(pinned);
+        });
+
+        return unsub;
+      } catch (error) {
+        console.error("Error fetching pinned messages:", error);
+      }
+    };
+
+    fetchPinnedMessages();
+  }, [currentUser, receiverUid]);
 
   // Subscribe to messages
   useEffect(() => {
@@ -168,21 +210,15 @@ const ChatWithUser = () => {
   const removeImage = () => {
     setImage(null);
     setImagePreview(null);
-    // Also clear the file input if you want to allow re-selecting the same file after removing
     const fileInput = document.getElementById("imageUpload");
-    if (fileInput) {
-      fileInput.value = "";
-    }
+    if (fileInput) fileInput.value = "";
   };
 
   const compressImage = async (file) => {
-    // Consider adding a check for HEIC/HEIF if needed and converting to JPEG first
-    // For simplicity, keeping the original WEBP conversion
     try {
       const imageBitmap = await createImageBitmap(file);
       const canvas = document.createElement("canvas");
       
-      // Optional: Resize for very large images to save storage and bandwidth
       const MAX_WIDTH = 1920;
       const MAX_HEIGHT = 1080;
       let { width, height } = imageBitmap;
@@ -214,17 +250,16 @@ const ChatWithUser = () => {
                 })
               );
             } else {
-              console.error("Canvas toBlob failed, returning original file");
-              resolve(file); // Fallback to original file if compression fails
+              resolve(file);
             }
           },
           "image/webp",
-          0.7 // Quality
+          0.7
         );
       });
     } catch (error) {
-        console.error("Image compression error:", error);
-        return file; // Fallback to original file
+      console.error("Image compression error:", error);
+      return file;
     }
   };
 
@@ -260,11 +295,11 @@ const ChatWithUser = () => {
         receiver: receiverUid,
         participants: [currentUser.uid, receiverUid],
         timestamp: serverTimestamp(),
-        status: "sent", // Initial status
+        status: "sent",
         edited: false,
       });
 
-      // Update `chattedWith` for both users
+      // Update chattedWith for both users
       const senderRef = doc(db, "hellohi-users", currentUser.uid);
       await updateDoc(senderRef, { chattedWith: arrayUnion(receiverUid) });
       const receiverRef = doc(db, "hellohi-users", receiverUid);
@@ -273,16 +308,16 @@ const ChatWithUser = () => {
       setText("");
       setImage(null);
       setImagePreview(null);
-      removeImage(); // Clear file input
+      removeImage();
       setAudioBlob(null);
       setAudioURL(null);
       setShowAudioPopup(false);
     } catch (error) {
       console.error("Error sending message:", error);
-      // Add user feedback for error
     }
   };
 
+  // Audio recording functions
   useEffect(() => {
     let intervalId;
     if (isRecording && countdown > 0) {
@@ -292,15 +327,14 @@ const ChatWithUser = () => {
     } else if (countdown === 0 && isRecording) {
       stopRecording();
     }
-    countdownRef.current = intervalId; // Store intervalId in ref
+    countdownRef.current = intervalId;
     return () => clearInterval(intervalId);
   }, [isRecording, countdown]);
-
 
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' }); // Specify MIME type for better compatibility
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
       const chunks = [];
 
       recorder.ondataavailable = (e) => {
@@ -312,15 +346,13 @@ const ChatWithUser = () => {
         const url = URL.createObjectURL(completeBlob);
         setAudioBlob(completeBlob);
         setAudioURL(url);
-        // Do not automatically stop stream tracks here if you want to re-record without asking permission again soon
       };
 
       recorder.start();
       setIsRecording(true);
-      // setAudioChunks([]); // Chunks are local to this function
       setMediaRecorder(recorder);
-      setCountdown(30); // Reset countdown
-      setAudioBlob(null); // Clear previous recording
+      setCountdown(30);
+      setAudioBlob(null);
       setAudioURL(null);
     } catch (error) {
       console.error("Error starting recording:", error);
@@ -332,35 +364,30 @@ const ChatWithUser = () => {
   const stopRecording = () => {
     if (mediaRecorder) {
       mediaRecorder.stop();
-      // It's good practice to stop tracks when done to release resources
       mediaRecorder.stream.getTracks().forEach((track) => track.stop());
-      setMediaRecorder(null); // Important to allow new MediaRecorder instance next time
+      setMediaRecorder(null);
       setIsRecording(false);
-      // Countdown is reset when starting
     }
     if(countdownRef.current) clearInterval(countdownRef.current);
   };
   
-  // Automatically start recording when popup opens and no audio is yet recorded
-   useEffect(() => {
+  useEffect(() => {
     if (showAudioPopup && !isRecording && !audioBlob) {
       startRecording();
     }
   }, [showAudioPopup, isRecording, audioBlob]);
 
-
   const cancelRecording = () => {
-    stopRecording(); // This will also stop tracks
+    stopRecording();
     setAudioBlob(null);
     setAudioURL(null);
     setShowAudioPopup(false);
-    setCountdown(30); // Reset countdown
+    setCountdown(30);
   };
 
   const sendAudio = () => {
     if (audioBlob) {
       handleSend(audioBlob);
-      // State clearing is handled in handleSend
     }
   };
 
@@ -370,7 +397,7 @@ const ChatWithUser = () => {
       setIsPlayingAudio(false);
     } else {
       if (audioPlayerRef.current && !audioPlayerRef.current.paused) {
-        audioPlayerRef.current.pause(); // Pause previous audio
+        audioPlayerRef.current.pause();
       }
       audioPlayerRef.current = new Audio(url);
       audioPlayerRef.current.play().catch(error => console.error("Error playing audio:", error));
@@ -380,19 +407,20 @@ const ChatWithUser = () => {
         setIsPlayingAudio(false);
         setCurrentPlayingAudioUrl(null);
       };
-       audioPlayerRef.current.onpause = () => { // Handle explicit pause
+      audioPlayerRef.current.onpause = () => {
         if (audioPlayerRef.current && audioPlayerRef.current.src === url) {
-            setIsPlayingAudio(false);
+          setIsPlayingAudio(false);
         }
       };
     }
   };
 
+  // Message actions
   const handleLongPress = (e, messageId, messageText, senderId) => {
-     e.preventDefault(); // Prevent context menu
-    if (senderId === currentUser?.uid) { // Only allow sender to edit/delete
+    e.preventDefault();
+    if (senderId === currentUser?.uid) {
       setLongPressedMessageId(messageId);
-      setEditingMessageText(messageText || ""); // Ensure text is not undefined
+      setEditingMessageText(messageText || "");
     }
   };
 
@@ -403,7 +431,7 @@ const ChatWithUser = () => {
         await updateDoc(messageRef, {
           text: editingMessageText.trim(),
           edited: true,
-          timestamp: serverTimestamp(), // Optionally update timestamp on edit
+          timestamp: serverTimestamp(),
         });
       } catch (error) {
         console.error("Error editing message:", error);
@@ -414,17 +442,21 @@ const ChatWithUser = () => {
   };
 
   const handleDeleteMessage = async () => {
-    // Use longPressedMessageId if editingMessageId is not yet set by edit button
     const messageIdToDelete = editingMessageId || longPressedMessageId;
     if (messageIdToDelete) {
       try {
         const messageRef = doc(db, "hellohi-messages", messageIdToDelete);
-        // Optional: Before deleting, check if the current user is the sender if not already done
         await deleteDoc(messageRef);
+        
+        // Also remove from pinned messages if it was pinned
+        const pinnedMessage = pinnedMessages.find(m => m.messageId === messageIdToDelete);
+        if (pinnedMessage) {
+          await deleteDoc(doc(db, "hellohi-pinned-messages", pinnedMessage.id));
+        }
       } catch (error) {
         console.error("Error deleting message:", error);
       } finally {
-        cancelEdit(); // Resets all editing states
+        cancelEdit();
       }
     }
   };
@@ -434,12 +466,42 @@ const ChatWithUser = () => {
     setEditingMessageText("");
     setLongPressedMessageId(null);
   };
-  
+
+  // Pin/unpin message
+  const togglePinMessage = async (messageId) => {
+    if (!currentUser || !receiverUid) return;
+    
+    try {
+      const chatId = `${currentUser.uid}_${receiverUid}`;
+      const isPinned = pinnedMessages.some(m => m.messageId === messageId);
+      
+      if (isPinned) {
+        // Unpin
+        const pinnedMessage = pinnedMessages.find(m => m.messageId === messageId);
+        if (pinnedMessage) {
+          await deleteDoc(doc(db, "hellohi-pinned-messages", pinnedMessage.id));
+        }
+      } else {
+        // Pin
+        const message = messages.find(m => m.id === messageId);
+        if (message) {
+          await addDoc(collection(db, "hellohi-pinned-messages"), {
+            chatId,
+            messageId,
+            messageData: message,
+            pinnedBy: currentUser.uid,
+            pinnedAt: serverTimestamp(),
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error toggling pin:", error);
+    }
+  };
+
   if (!currentUser) {
-    // Or a redirect to login
     return <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-slate-900 text-gray-800 dark:text-gray-200">Loading user...</div>;
   }
-
 
   return (
     <div className="flex flex-col h-screen max-w-3xl mx-auto bg-white dark:bg-slate-800 shadow-lg rounded-lg overflow-hidden">
@@ -465,7 +527,7 @@ const ChatWithUser = () => {
               {receiverData?.name || "User"}
             </h2>
             <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
-              {receiverData?.online ? "Online" : "Offline"} {/* Consider real-time status updates */}
+              {receiverData?.online ? "Online" : "Offline"}
             </p>
           </div>
         </div>
@@ -477,6 +539,52 @@ const ChatWithUser = () => {
           {theme === "light" ? <FaMoon size={20} /> : <FaSun size={20} />}
         </button>
       </div>
+
+      {/* Pinned Messages Section */}
+      {pinnedMessages.length > 0 && (
+        <div className="border-b border-gray-200 dark:border-slate-700 bg-blue-50 dark:bg-slate-750 p-2">
+          <h3 className="text-xs font-semibold text-gray-500 dark:text-slate-400 mb-1 px-2">PINNED MESSAGES</h3>
+          <div className="space-y-2 max-h-40 overflow-y-auto">
+            {pinnedMessages.map((pinned) => (
+              <div
+                key={pinned.id}
+                className={`flex flex-col p-2 rounded-lg text-sm ${
+                  pinned.messageData.sender === currentUser.uid
+                    ? "bg-blue-100 dark:bg-blue-900"
+                    : "bg-gray-100 dark:bg-slate-700"
+                }`}
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    {pinned.messageData.image && (
+                      <img
+                        src={pinned.messageData.image}
+                        alt="pinned"
+                        className="w-16 h-16 object-cover rounded mb-1"
+                      />
+                    )}
+                    {pinned.messageData.text && (
+                      <p className="whitespace-pre-wrap break-words">
+                        {pinned.messageData.text}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => togglePinMessage(pinned.messageData.id)}
+                    className="text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+                    title="Unpin message"
+                  >
+                    <FaThumbtack size={14} />
+                  </button>
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {pinned.pinnedAt?.toDate?.().toLocaleString() || "Pinned recently"}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-100 dark:bg-slate-900">
@@ -490,6 +598,13 @@ const ChatWithUser = () => {
             } relative group`}
             onContextMenu={(e) => handleLongPress(e, msg.id, msg.text, msg.sender)}
           >
+            {/* Pin indicator for pinned messages */}
+            {pinnedMessages.some(m => m.messageId === msg.id) && (
+              <div className="absolute -top-2 -left-2 text-blue-600 dark:text-blue-400">
+                <FaThumbtack size={14} />
+              </div>
+            )}
+
             {msg.image && (
               <img
                 src={msg.image}
@@ -526,31 +641,58 @@ const ChatWithUser = () => {
               {msg.sender === currentUser.uid && (
                 <>
                   {msg.status === "sent" && <FaCheckDouble className="text-gray-400 dark:text-slate-500" title="Sent"/>}
-                  {msg.status === "delivered" && <FaCheckDouble className="text-blue-300 dark:text-sky-300" title="Delivered"/>} {/* A lighter blue for delivered on dark might be needed */}
+                  {msg.status === "delivered" && <FaCheckDouble className="text-blue-300 dark:text-sky-300" title="Delivered"/>}
                   {msg.status === "seen" && <FaCheckDouble className="text-green-300 dark:text-green-400" title="Seen"/>}
                 </>
               )}
             </div>
-             {/* Edit/Delete options for sender, shown on long press (context menu) */}
-            {longPressedMessageId === msg.id && msg.sender === currentUser.uid && (
-                <div className="absolute -top-10 right-0 sm:left-0 sm:-top-2 sm:group-hover:flex flex gap-1 bg-white dark:bg-slate-600 p-1 rounded-md shadow-lg z-10">
-                    <button onClick={() => { setEditingMessageId(msg.id); setLongPressedMessageId(null); }} className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-500 rounded">
-                        <FaEdit className="text-blue-600 dark:text-blue-400" />
+
+            {/* Message actions */}
+            {longPressedMessageId === msg.id && (
+              <div className="absolute -top-10 right-0 sm:left-0 sm:-top-2 sm:group-hover:flex flex gap-1 bg-white dark:bg-slate-600 p-1 rounded-md shadow-lg z-10">
+                {msg.sender === currentUser.uid && (
+                  <>
+                    <button 
+                      onClick={() => { 
+                        setEditingMessageId(msg.id); 
+                        setLongPressedMessageId(null); 
+                      }} 
+                      className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-500 rounded"
+                      title="Edit"
+                    >
+                      <FaEdit className="text-blue-600 dark:text-blue-400" />
                     </button>
-                    <button onClick={handleDeleteMessage} className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-500 rounded">
-                        <FaTrashAlt className="text-red-600 dark:text-red-400" />
+                    <button 
+                      onClick={handleDeleteMessage} 
+                      className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-500 rounded"
+                      title="Delete"
+                    >
+                      <FaTrashAlt className="text-red-600 dark:text-red-400" />
                     </button>
-                     <button onClick={() => setLongPressedMessageId(null)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-500 rounded">
-                        <FaTimesCircle className="text-gray-500 dark:text-gray-300" />
-                    </button>
-                </div>
+                  </>
+                )}
+                <button 
+                  onClick={() => togglePinMessage(msg.id)} 
+                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-500 rounded"
+                  title={pinnedMessages.some(m => m.messageId === msg.id) ? "Unpin" : "Pin"}
+                >
+                  <FaThumbtack className={`${pinnedMessages.some(m => m.messageId === msg.id) ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300'}`} />
+                </button>
+                <button 
+                  onClick={() => setLongPressedMessageId(null)} 
+                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-500 rounded"
+                  title="Close"
+                >
+                  <FaTimesCircle className="text-gray-500 dark:text-gray-300" />
+                </button>
+              </div>
             )}
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
       
-      {/* Message Editing Input - appears when editingMessageId is set */}
+      {/* Message Editing Input */}
       {editingMessageId && (
         <div className="p-3 bg-gray-100 dark:bg-slate-700 border-t border-gray-300 dark:border-slate-600 flex items-center gap-2">
           <input
@@ -558,7 +700,10 @@ const ChatWithUser = () => {
             className="flex-1 p-2.5 rounded-lg border border-gray-300 dark:border-slate-500 bg-white dark:bg-slate-800 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
             value={editingMessageText}
             onChange={(e) => setEditingMessageText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleEditMessage(); if (e.key === "Escape") cancelEdit(); }}
+            onKeyDown={(e) => { 
+              if (e.key === 'Enter') handleEditMessage(); 
+              if (e.key === "Escape") cancelEdit(); 
+            }}
             autoFocus
           />
           <button
@@ -576,7 +721,6 @@ const ChatWithUser = () => {
         </div>
       )}
 
-
       {/* Audio recording popup */}
       {showAudioPopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex justify-center items-center z-50 p-4">
@@ -593,7 +737,7 @@ const ChatWithUser = () => {
             )}
             
             <div className="flex gap-3 justify-center w-full">
-             {!audioBlob ? ( // Show record/stop controls
+             {!audioBlob ? (
                 isRecording ? (
                     <button
                     onClick={stopRecording}
@@ -602,21 +746,21 @@ const ChatWithUser = () => {
                     Stop
                     </button>
                 ) : (
-                    <button // This button might not be needed if auto-start is reliable
+                    <button
                     onClick={startRecording}
                     className="px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium w-full"
                     >
                     Record
                     </button>
                 )
-             ) : ( // Show Send/Re-record controls
+             ) : (
                 <>
                     <button
                         onClick={sendAudio}
                         className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex-1"
                     > Send </button>
                     <button
-                        onClick={startRecording} // This will act as re-record
+                        onClick={startRecording}
                         className="px-5 py-2.5 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 text-sm font-medium flex-1"
                     > Re-record </button>
                 </>
@@ -632,14 +776,13 @@ const ChatWithUser = () => {
         </div>
       )}
 
-      {/* Input area - hidden when editing a message */}
+      {/* Input area */}
       {!editingMessageId && (
         <form
           onSubmit={(e) => { e.preventDefault(); handleSend(); }}
           className="p-3 sm:p-4 border-t border-gray-200 dark:border-slate-700 flex items-end gap-2 sm:gap-3 bg-gray-50 dark:bg-slate-750"
         >
-          {/* Image upload */}
-          {!imagePreview && ( // Only show icon if no image is selected
+          {!imagePreview && (
             <label
               htmlFor="imageUpload"
               className="p-2.5 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-600 cursor-pointer"
@@ -650,7 +793,6 @@ const ChatWithUser = () => {
           )}
           <input id="imageUpload" type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
 
-          {/* Preview image with remove */}
           {imagePreview && (
             <div className="relative w-16 h-16 mb-1">
               <img src={imagePreview} alt="Preview" className="rounded-md object-cover w-full h-full shadow-sm" />
@@ -665,7 +807,6 @@ const ChatWithUser = () => {
             </div>
           )}
 
-          {/* Message input */}
           <textarea
             rows={1}
             placeholder="Type a message..."
@@ -673,7 +814,6 @@ const ChatWithUser = () => {
             value={text}
             onChange={(e) => {
                 setText(e.target.value);
-                // Auto-resize textarea
                 e.target.style.height = 'auto';
                 e.target.style.height = `${e.target.scrollHeight}px`;
             }}
@@ -681,15 +821,12 @@ const ChatWithUser = () => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     handleSend();
-                    // Reset height after send
                     e.target.style.height = 'auto';
-
                 }
             }}
             disabled={showAudioPopup}
           />
 
-          {/* Audio record / Send button */}
           {text.trim() || image ? (
             <button
               type="submit"
@@ -707,12 +844,12 @@ const ChatWithUser = () => {
             <button
               type="button"
               onClick={() => {
-                if (editingMessageId) return; // Don't show audio popup if editing
+                if (editingMessageId) return;
                 setShowAudioPopup(true);
               }}
               title="Record Audio"
               className="p-2.5 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-600"
-              disabled={showAudioPopup || editingMessageId} // Disable if editing
+              disabled={showAudioPopup || editingMessageId}
             >
               <FaMicrophone size={22} />
             </button>
