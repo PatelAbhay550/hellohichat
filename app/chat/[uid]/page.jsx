@@ -22,8 +22,7 @@ import {
 
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { v4 as uuidv4 } from "uuid";
-import { FaPaperPlane, FaImage, FaTimesCircle, FaMicrophone, FaPlayCircle, FaPauseCircle, FaEdit, FaTrashAlt, FaCheckDouble } from "react-icons/fa"; // Added icons
-import { BsBack } from "react-icons/bs";
+import { FaPaperPlane, FaImage, FaTimesCircle, FaMicrophone, FaPlayCircle, FaPauseCircle, FaEdit, FaTrashAlt, FaCheckDouble, FaRegTimesCircle } from "react-icons/fa"; // Added icons
 
 const ChatWithUser = () => {
   const { uid: receiverUid } = useParams();
@@ -37,19 +36,19 @@ const ChatWithUser = () => {
 
   // Audio Recording States
   const [isRecording, setIsRecording] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState(null);
   const [audioBlob, setAudioBlob] = useState(null);
   const [audioURL, setAudioURL] = useState(null);
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-  const [showAudioPopup, setShowAudioPopup] = useState(false);
-  const audioPlayerRef = useRef(null);
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [countdown, setCountdown] = useState(30);
 
   // Message Editing States
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingMessageText, setEditingMessageText] = useState("");
   const [longPressedMessageId, setLongPressedMessageId] = useState(null); // State for long-pressed message
 
+const [audioChunks, setAudioChunks] = useState([]);
+const streamRef = useRef(null);
+  const countdownRef = useRef(null);
   useEffect(() => {
     const fetchReceiverData = async () => {
       if (!receiverUid) return;
@@ -169,7 +168,21 @@ const ChatWithUser = () => {
     setAudioURL(null);
     setShowAudioPopup(false);
   };
+useEffect(() => {
+    if (isRecording) {
+      countdownRef.current = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            stopRecording();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
 
+    return () => clearInterval(countdownRef.current);
+  }, [isRecording]);
   const compressImage = async (file) => {
     const imageBitmap = await createImageBitmap(file);
     const canvas = document.createElement("canvas");
@@ -188,38 +201,43 @@ const ChatWithUser = () => {
   };
 
   // Audio Recording Functions
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = [];
+const startRecording = async () => {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const recorder = new MediaRecorder(stream);
 
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
+  const chunks = [];
 
-      mediaRecorderRef.current.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        setAudioBlob(audioBlob);
-        setAudioURL(URL.createObjectURL(audioBlob));
-        audioChunksRef.current = [];
-      };
-
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
-      setShowAudioPopup(true);
-    } catch (error) {
-      console.error("Error accessing microphone:", error);
-      alert("Please allow microphone access to record audio.");
+  recorder.ondataavailable = (e) => {
+    if (e.data.size > 0) {
+      chunks.push(e.data);
     }
   };
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
+  recorder.onstop = () => {
+    const audioBlob = new Blob(chunks, { type: "audio/webm" });
+    const audioURL = URL.createObjectURL(audioBlob);
+    setAudioBlob(audioBlob);
+    setAudioURL(audioURL);
   };
+
+  recorder.start();
+  setAudioChunks([]);
+  setMediaRecorder(recorder);
+};
+
+const stopRecording = () => {
+  if (mediaRecorder) {
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach(track => track.stop());
+    setMediaRecorder(null);
+  }
+};
+
+useEffect(() => {
+  if (showAudioPopup && !audioBlob) {
+    startRecording();
+  }
+}, [showAudioPopup]);
 
   const cancelRecording = () => {
     stopRecording();
@@ -262,16 +280,17 @@ const ChatWithUser = () => {
   };
 
   const handleEditMessage = async () => {
-    if (editingMessageId && editingMessageText.trim()) {
-      const messageDocRef = doc(db, "hellohi-messages", editingMessageId);
-      await updateDoc(messageDocRef, {
-        text: editingMessageText.trim(),
-        edited: true,
-      });
-      setEditingMessageId(null);
-      setEditingMessageText("");
-      setLongPressedMessageId(null); // Close context menu
-    }
+    // ✅ Handle message editing
+  if (editingMessageId) {
+    const messageDocRef = doc(db, "hellohi-messages", editingMessageId);
+    await updateDoc(messageDocRef, {
+      text: text.trim(),
+      edited: true,
+    });
+    setEditingMessageId(null);
+    setText("");
+    return;
+  }
   };
 
   const handleDeleteMessage = async () => {
@@ -341,15 +360,20 @@ const ChatWithUser = () => {
                   onClick={() => window.open(msg.image, "_blank")}
                 />
               )}
-              {msg.audio && (
-                <div className="flex items-center gap-2">
-                  <button onClick={() => togglePlayAudio(msg.audio)} className="text-white dark:text-blue-200">
-                    {isPlayingAudio && audioPlayerRef.current?.src === msg.audio ? <FaPauseCircle className="w-6 h-6" /> : <FaPlayCircle className="w-6 h-6" />}
-                  </button>
-                  <audio ref={audioPlayerRef} src={msg.audio} className="hidden" />
-                  <span className="text-sm">Audio Message</span>
-                </div>
-              )}
+              {msg.audio?.length > 5 && (
+  <div className="flex items-center gap-2">
+    <button onClick={() => togglePlayAudio(msg.audio)} className="text-white dark:text-blue-200">
+      {isPlayingAudio && audioPlayerRef.current?.src === msg.audio ? (
+        <FaPauseCircle className="w-6 h-6" />
+      ) : (
+        <FaPlayCircle className="w-6 h-6" />
+      )}
+    </button>
+    <audio ref={audioPlayerRef} src={msg.audio} className="hidden" />
+    <span className="text-sm">Audio Message</span>
+  </div>
+)}
+
               {msg.text && <p className="text-sm">{msg.text}</p>}
               {msg.edited && (
                 <span className={`text-xs mt-1 block ${msg.sender === currentUser.uid ? "text-blue-200" : "text-gray-500 dark:text-gray-400"}`}>
@@ -413,14 +437,14 @@ const ChatWithUser = () => {
             </div>
           )}
           <input
+          
             type="text"
             placeholder="Type a message..."
             className="flex-1 px-4 py-2 rounded-full border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && (editingMessageId ? handleEditMessage() : handleSend())}
+            onKeyDown={(e) => e.key === "Enter" && (editingMessageId ? handleEditMessage() : handleSend())}
           />
-
           <label className="cursor-pointer text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">
             <FaImage className="w-7 h-7" />
             <input
@@ -450,44 +474,51 @@ const ChatWithUser = () => {
         </div>
       </div>
 
-      {showAudioPopup && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl flex flex-col items-center gap-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Audio Message</h3>
-            {isRecording ? (
-              <p className="text-red-500 animate-pulse">Recording...</p>
-            ) : (
-              audioURL && (
-                <div className="flex items-center gap-3">
-                  <audio src={audioURL} controls className="w-64" />
-                </div>
-              )
-            )}
-            <div className="flex gap-4">
-              <button
-                onClick={isRecording ? stopRecording : startRecording}
-                className={`p-3 rounded-full ${isRecording ? "bg-red-500 hover:bg-red-600" : "bg-blue-600 hover:bg-blue-700"} text-white transition-colors`}
-              >
-                {isRecording ? <FaPauseCircle className="w-6 h-6" /> : <FaMicrophone className="w-6 h-6" />}
-              </button>
-              <button
-                onClick={cancelRecording}
-                className="bg-gray-300 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-white p-3 rounded-full transition-colors"
-              >
-                <FaTimesCircle className="w-6 h-6" />
-              </button>
-              {!isRecording && audioBlob && (
-                <button
-                  onClick={sendAudio}
-                  className="bg-green-600 hover:bg-green-700 text-white p-3 rounded-full transition-colors"
-                >
-                  <FaPaperPlane className="w-6 h-6" />
-                </button>
-              )}
-            </div>
+     {showAudioPopup && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div className="bg-white dark:bg-gray-900 p-6 rounded-xl w-full max-w-sm shadow-lg text-center space-y-4">
+      {!audioBlob ? (
+        <>
+          <p className="text-lg font-semibold">Recording...</p>
+          <button
+            onClick={stopRecording}
+            className="bg-red-500 text-white px-4 py-2 rounded-xl shadow"
+          >
+            Stop Recording
+          </button>
+        </>
+      ) : (
+        <>
+          <audio controls src={audioURL} className="w-full" />
+          <div className="flex justify-between gap-4 mt-4">
+            <button
+              onClick={() => {
+                handleSend(audioBlob);
+                setAudioBlob(null);
+                setAudioURL(null);
+                setShowAudioPopup(false);
+              }}
+              className="bg-blue-600 text-white px-4 py-2 rounded-xl flex-1"
+            >
+              Send
+            </button>
+            <button
+              onClick={() => {
+                setAudioBlob(null);
+                setAudioURL(null);
+                setShowAudioPopup(false);
+              }}
+              className="bg-gray-300 dark:bg-gray-700 text-black dark:text-white px-4 py-2 rounded-xl flex-1"
+            >
+              Discard
+            </button>
           </div>
-        </div>
+        </>
       )}
+    </div>
+  </div>
+)}
+
     </div>
   );
 };
