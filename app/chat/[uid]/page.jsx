@@ -17,11 +17,12 @@ import {
   getDoc,
   updateDoc,
   arrayUnion,
-
+  deleteDoc, // Added for deleting messages
 } from "firebase/firestore";
+
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { v4 as uuidv4 } from "uuid";
-import { FaPaperPlane, FaImage, FaTimesCircle, FaRegTimesCircle } from "react-icons/fa"; // Added FaTimesCircle for image removal
+import { FaPaperPlane, FaImage, FaTimesCircle, FaMicrophone, FaPlayCircle, FaPauseCircle, FaEdit, FaTrashAlt, FaCheckDouble } from "react-icons/fa"; // Added icons
 import { BsBack } from "react-icons/bs";
 
 const ChatWithUser = () => {
@@ -30,23 +31,39 @@ const ChatWithUser = () => {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [image, setImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null); // State for image preview
+  const [imagePreview, setImagePreview] = useState(null);
   const messagesEndRef = useRef(null);
   const [receiverData, setReceiverData] = useState(null);
-useEffect(() => {
-  const fetchReceiverData = async () => {
-    if (!receiverUid) return;
 
-    const docRef = doc(db, "hellohi-users", receiverUid);
-    const docSnap = await getDoc(docRef);
+  // Audio Recording States
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioBlob, setAudioBlob] = useState(null);
+  const [audioURL, setAudioURL] = useState(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const [showAudioPopup, setShowAudioPopup] = useState(false);
+  const audioPlayerRef = useRef(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
 
-    if (docSnap.exists()) {
-      setReceiverData(docSnap.data());
-    }
-  };
+  // Message Editing States
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editingMessageText, setEditingMessageText] = useState("");
+  const [longPressedMessageId, setLongPressedMessageId] = useState(null); // State for long-pressed message
 
-  fetchReceiverData();
-}, [receiverUid]);
+  useEffect(() => {
+    const fetchReceiverData = async () => {
+      if (!receiverUid) return;
+
+      const docRef = doc(db, "hellohi-users", receiverUid);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        setReceiverData(docSnap.data());
+      }
+    };
+
+    fetchReceiverData();
+  }, [receiverUid]);
 
 
   useEffect(() => {
@@ -59,7 +76,7 @@ useEffect(() => {
       orderBy("timestamp")
     );
 
-    const unsub = onSnapshot(q, (snapshot) => {
+    const unsub = onSnapshot(q, async (snapshot) => {
       const filtered = snapshot.docs
         .map((doc) => ({ id: doc.id, ...doc.data() }))
         .filter(
@@ -69,6 +86,16 @@ useEffect(() => {
         );
 
       setMessages(filtered);
+
+      // Mark messages as seen when the current user is the receiver
+      filtered.forEach(async (msg) => {
+        if (msg.receiver === currentUser.uid && msg.status !== "seen") {
+          const messageDocRef = doc(db, "hellohi-messages", msg.id);
+          await updateDoc(messageDocRef, {
+            status: "seen",
+          });
+        }
+      });
     });
 
     return () => unsub();
@@ -82,7 +109,7 @@ useEffect(() => {
     const file = e.target.files[0];
     if (file) {
       setImage(file);
-      setImagePreview(URL.createObjectURL(file)); // Create URL for preview
+      setImagePreview(URL.createObjectURL(file));
     } else {
       setImage(null);
       setImagePreview(null);
@@ -94,10 +121,12 @@ useEffect(() => {
     setImagePreview(null);
   };
 
-  const handleSend = async () => {
-    if (!text.trim() && !image) return;
+  const handleSend = async (audio = null) => {
+    if (!text.trim() && !image && !audio) return;
 
     let imageUrl = null;
+    let audioUrl = null;
+
     if (image) {
       const imgRef = ref(storage, `chat-images/${uuidv4()}.webp`);
       const compressedImage = await compressImage(image);
@@ -105,28 +134,40 @@ useEffect(() => {
       imageUrl = await getDownloadURL(imgRef);
     }
 
+    if (audio) {
+      const audioRef = ref(storage, `chat-audios/${uuidv4()}.webm`);
+      await uploadBytes(audioRef, audio);
+      audioUrl = await getDownloadURL(audioRef);
+    }
+
     await addDoc(collection(db, "hellohi-messages"), {
       text,
       image: imageUrl,
+      audio: audioUrl, // Save audio URL
       sender: currentUser.uid,
       receiver: receiverUid,
       participants: [currentUser.uid, receiverUid],
       timestamp: serverTimestamp(),
+      status: "sent", // Initial status for double tick
+      edited: false, // For message editing
     });
-// 🔁 Update chattedWith for sender
-  const senderRef = doc(db, "hellohi-users", currentUser.uid);
-  await updateDoc(senderRef, {
-    chattedWith: arrayUnion(receiverUid),
-  });
 
-  // 🔁 Update chattedWith for receiver
-  const receiverRef = doc(db, "hellohi-users", receiverUid);
-  await updateDoc(receiverRef, {
-    chattedWith: arrayUnion(currentUser.uid),
-  });
+    const senderRef = doc(db, "hellohi-users", currentUser.uid);
+    await updateDoc(senderRef, {
+      chattedWith: arrayUnion(receiverUid),
+    });
+
+    const receiverRef = doc(db, "hellohi-users", receiverUid);
+    await updateDoc(receiverRef, {
+      chattedWith: arrayUnion(currentUser.uid),
+    });
+
     setText("");
     setImage(null);
-    setImagePreview(null); // Clear preview after sending
+    setImagePreview(null);
+    setAudioBlob(null);
+    setAudioURL(null);
+    setShowAudioPopup(false);
   };
 
   const compressImage = async (file) => {
@@ -146,39 +187,146 @@ useEffect(() => {
     });
   };
 
+  // Audio Recording Functions
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorderRef.current.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        setAudioBlob(audioBlob);
+        setAudioURL(URL.createObjectURL(audioBlob));
+        audioChunksRef.current = [];
+      };
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+      setShowAudioPopup(true);
+    } catch (error) {
+      console.error("Error accessing microphone:", error);
+      alert("Please allow microphone access to record audio.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const cancelRecording = () => {
+    stopRecording();
+    setAudioBlob(null);
+    setAudioURL(null);
+    setShowAudioPopup(false);
+  };
+
+  const sendAudio = () => {
+    if (audioBlob) {
+      handleSend(audioBlob);
+    }
+  };
+
+  const togglePlayAudio = (url) => {
+    if (audioPlayerRef.current && audioPlayerRef.current.src === url) {
+      if (isPlayingAudio) {
+        audioPlayerRef.current.pause();
+      } else {
+        audioPlayerRef.current.play();
+      }
+      setIsPlayingAudio(!isPlayingAudio);
+    } else {
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+      }
+      audioPlayerRef.current = new Audio(url);
+      audioPlayerRef.current.play();
+      setIsPlayingAudio(true);
+      audioPlayerRef.current.onended = () => setIsPlayingAudio(false);
+    }
+  };
+
+  // Message Editing/Deleting Functions
+  const handleLongPress = (messageId, messageText, senderId) => {
+    if (senderId === currentUser.uid) {
+      setLongPressedMessageId(messageId);
+      setEditingMessageText(messageText);
+    }
+  };
+
+  const handleEditMessage = async () => {
+    if (editingMessageId && editingMessageText.trim()) {
+      const messageDocRef = doc(db, "hellohi-messages", editingMessageId);
+      await updateDoc(messageDocRef, {
+        text: editingMessageText.trim(),
+        edited: true,
+      });
+      setEditingMessageId(null);
+      setEditingMessageText("");
+      setLongPressedMessageId(null); // Close context menu
+    }
+  };
+
+  const handleDeleteMessage = async () => {
+    if (longPressedMessageId) {
+      const messageDocRef = doc(db, "hellohi-messages", longPressedMessageId);
+      await deleteDoc(messageDocRef);
+      setLongPressedMessageId(null); // Close context menu
+    }
+  };
+
+  const handleStartEdit = (message) => {
+    setEditingMessageId(message.id);
+    setText(message.text); // Pre-fill the input with the message text
+    setLongPressedMessageId(null); // Close context menu
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessageId(null);
+    setText("");
+  };
+
   return (
     <div className="max-w-2xl mx-auto h-screen flex flex-col bg-gray-50 dark:bg-gray-900 shadow-lg rounded-lg overflow-hidden">
-        <div className="topbar bg-blue-600 text-white p-4 flex items-center gap-3">
-          <Link href="/">
-          <IoIosArrowRoundBack className="text-3xl font-bold cursor-pointer" /></Link>
-  {receiverData?.profileImageUrl ? (
-   
-    <img
-      src={receiverData.profileImageUrl}
-      alt={receiverData.name || "User"}
-      className="w-10 h-10 rounded-full object-cover"
-    />
-    
-  ) : (
-    <div className="w-10 h-10 rounded-full bg-white text-blue-600 flex items-center justify-center font-bold">
-      {receiverData?.name?.[0] || "U"}
-    </div>
-  )}
-  <h2 className="text-lg font-semibold">
-    {receiverData?.name || "Loading..."}
-  </h2>
-</div>
+      <div className="topbar bg-blue-600 text-white p-4 flex items-center gap-3">
+        <Link href="/">
+          <IoIosArrowRoundBack className="text-3xl font-bold cursor-pointer" />
+        </Link>
+        {receiverData?.profileImageUrl ? (
+          <img
+            src={receiverData.profileImageUrl}
+            alt={receiverData.name || "User"}
+            className="w-10 h-10 rounded-full object-cover"
+          />
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-white text-blue-600 flex items-center justify-center font-bold">
+            {receiverData?.name?.[0] || "U"}
+          </div>
+        )}
+        <h2 className="text-lg font-semibold">
+          {receiverData?.name || "Loading..."}
+        </h2>
+      </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`flex ${
-              msg.sender === currentUser.uid ? "justify-end" : "justify-start"
-            }`}
+            className={`flex ${msg.sender === currentUser.uid ? "justify-end" : "justify-start"}`}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              handleLongPress(msg.id, msg.text, msg.sender);
+            }}
           >
             <div
-              className={`p-3 rounded-2xl max-w-[75%] shadow-md break-words ${
+              className={`p-3 rounded-2xl max-w-[75%] shadow-md break-words relative ${
                 msg.sender === currentUser.uid
                   ? "bg-blue-600 text-white rounded-br-none"
                   : "bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 rounded-bl-none"
@@ -190,16 +338,50 @@ useEffect(() => {
                   alt="shared content"
                   className="w-full h-auto max-h-64 object-cover rounded-lg mb-2 cursor-pointer transition-transform duration-200 hover:scale-105"
                   loading="lazy"
-                  onClick={() => window.open(msg.image, "_blank")} // Open image in new tab on click
+                  onClick={() => window.open(msg.image, "_blank")}
                 />
               )}
+              {msg.audio && (
+                <div className="flex items-center gap-2">
+                  <button onClick={() => togglePlayAudio(msg.audio)} className="text-white dark:text-blue-200">
+                    {isPlayingAudio && audioPlayerRef.current?.src === msg.audio ? <FaPauseCircle className="w-6 h-6" /> : <FaPlayCircle className="w-6 h-6" />}
+                  </button>
+                  <audio ref={audioPlayerRef} src={msg.audio} className="hidden" />
+                  <span className="text-sm">Audio Message</span>
+                </div>
+              )}
               {msg.text && <p className="text-sm">{msg.text}</p>}
+              {msg.edited && (
+                <span className={`text-xs mt-1 block ${msg.sender === currentUser.uid ? "text-blue-200" : "text-gray-500 dark:text-gray-400"}`}>
+                  (Edited)
+                </span>
+              )}
               {msg.timestamp && (
-                <span className={`text-xs mt-1 block ${
+                <span className={`text-xs mt-1 flex items-center gap-1 ${
                   msg.sender === currentUser.uid ? "text-blue-200" : "text-gray-500 dark:text-gray-400"
                 }`}>
                   {new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {msg.sender === currentUser.uid && (
+                    <FaCheckDouble className={msg.status === "seen" ? "text-blue-400" : "text-gray-300"} />
+                  )}
                 </span>
+              )}
+
+              {longPressedMessageId === msg.id && msg.sender === currentUser.uid && (
+                <div className="absolute top-0 right-0 mt-2 mr-2 bg-white dark:bg-gray-700 rounded-md shadow-lg py-1 z-10">
+                  <button
+                    onClick={() => handleStartEdit(msg)}
+                    className="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 w-full text-left"
+                  >
+                    <FaEdit className="mr-2" /> Edit
+                  </button>
+                  <button
+                    onClick={handleDeleteMessage}
+                    className="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-600 w-full text-left"
+                  >
+                    <FaTrashAlt className="mr-2" /> Delete
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -221,13 +403,22 @@ useEffect(() => {
           </div>
         )}
         <div className="flex items-center gap-2">
+          {editingMessageId && (
+            <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-2 w-full mb-2">
+              <span className="text-sm text-gray-600 dark:text-gray-300 mr-2">Editing:</span>
+              <span className="text-sm italic flex-1 truncate">{messages.find(msg => msg.id === editingMessageId)?.text}</span>
+              <button onClick={handleCancelEdit} className="text-red-500 hover:text-red-600 ml-2">
+                <FaRegTimesCircle />
+              </button>
+            </div>
+          )}
           <input
             type="text"
             placeholder="Type a message..."
             className="flex-1 px-4 py-2 rounded-full border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && handleSend()}
+            onKeyPress={(e) => e.key === "Enter" && (editingMessageId ? handleEditMessage() : handleSend())}
           />
 
           <label className="cursor-pointer text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">
@@ -241,15 +432,62 @@ useEffect(() => {
           </label>
 
           <button
-            onClick={handleSend}
-            className="bg-blue-600 text-white p-3 rounded-full hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={!text.trim() && !image}
-            aria-label="Send message"
+            onClick={startRecording}
+            className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors p-2 rounded-full"
+            aria-label="Record audio"
           >
-            <FaPaperPlane className="w-5 h-5" />
+            <FaMicrophone className="w-6 h-6" />
+          </button>
+
+          <button
+            onClick={editingMessageId ? handleEditMessage : handleSend}
+            className="bg-blue-600 text-white p-3 rounded-full hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!text.trim() && !image && !editingMessageId}
+            aria-label={editingMessageId ? "Edit message" : "Send message"}
+          >
+            {editingMessageId ? <FaEdit className="w-5 h-5" /> : <FaPaperPlane className="w-5 h-5" />}
           </button>
         </div>
       </div>
+
+      {showAudioPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl flex flex-col items-center gap-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Audio Message</h3>
+            {isRecording ? (
+              <p className="text-red-500 animate-pulse">Recording...</p>
+            ) : (
+              audioURL && (
+                <div className="flex items-center gap-3">
+                  <audio src={audioURL} controls className="w-64" />
+                </div>
+              )
+            )}
+            <div className="flex gap-4">
+              <button
+                onClick={isRecording ? stopRecording : startRecording}
+                className={`p-3 rounded-full ${isRecording ? "bg-red-500 hover:bg-red-600" : "bg-blue-600 hover:bg-blue-700"} text-white transition-colors`}
+              >
+                {isRecording ? <FaPauseCircle className="w-6 h-6" /> : <FaMicrophone className="w-6 h-6" />}
+              </button>
+              <button
+                onClick={cancelRecording}
+                className="bg-gray-300 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-white p-3 rounded-full transition-colors"
+              >
+                <FaTimesCircle className="w-6 h-6" />
+              </button>
+              {!isRecording && audioBlob && (
+                <button
+                  onClick={sendAudio}
+                  className="bg-green-600 hover:bg-green-700 text-white p-3 rounded-full transition-colors"
+                >
+                  <FaPaperPlane className="w-6 h-6" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
