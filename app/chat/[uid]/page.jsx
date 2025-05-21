@@ -3,8 +3,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import { auth, db, storage } from "@/lib/firebase";
-import { IoIosArrowRoundBack, IoMdMore } from "react-icons/io";
-import { FaUser } from "react-icons/fa6";
+import { IoIosArrowRoundBack } from "react-icons/io";
 import Link from "next/link";
 import {
   collection,
@@ -70,15 +69,13 @@ const ChatWithUser = () => {
     stopRecording,
     mediaBlobUrl,
     clearBlobUrl,
-    error: recordingError,
   } = useReactMediaRecorder({
     audio: true,
     blobPropertyBag: { type: "audio/webm" },
-    onStop: (blobUrl, blob) => {
+    onStop: () => {
       setShowAudioPopup(true);
     },
   });
-
   // Audio popup state
   const [showAudioPopup, setShowAudioPopup] = useState(false);
 
@@ -359,16 +356,22 @@ const ChatWithUser = () => {
   const handleSendAudio = async () => {
     if (!mediaBlobUrl) return;
 
+    // Stop audio playback if playing the recorded audio
+    if (audioPlayerRef.current && currentPlayingAudioUrl === mediaBlobUrl) {
+      audioPlayerRef.current.pause();
+      setIsPlayingAudio(false);
+      setCurrentPlayingAudioUrl(null);
+    }
+
     try {
       const response = await fetch(mediaBlobUrl);
       const blob = await response.blob();
       const audioFile = new File([blob], "recording.webm", {
         type: "audio/webm",
       });
-
       await handleSend(audioFile);
-    } catch (err) {
-      console.error("Error sending audio:", err);
+    } catch (error) {
+      console.error("Error sending audio message:", error);
     }
   };
 
@@ -942,3 +945,66 @@ const ChatWithUser = () => {
               </button>
             </div>
           )}
+
+          <textarea
+            rows={1}
+            placeholder="Type a message..."
+            className="flex-1 px-4 py-2.5 rounded-2xl border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 resize-none overflow-y-auto max-h-24"
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = `${e.target.scrollHeight}px`;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+                e.target.style.height = "auto";
+              }
+            }}
+            disabled={recordingStatus === "recording"}
+          />
+
+          {text.trim() || image ? (
+            <button
+              type="submit"
+              className="p-2.5 rounded-full bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white"
+              title="Send Message"
+            >
+              <FaPaperPlane size={20} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={
+                recordingStatus === "recording" ? stopRecording : startRecording
+              }
+              title={
+                recordingStatus === "recording"
+                  ? "Stop Recording"
+                  : "Record Audio"
+              }
+              className={`p-2.5 rounded-full ${
+                recordingStatus === "recording"
+                  ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
+                  : "text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-600"
+              }`}
+            >
+              <FaMicrophone size={22} />
+            </button>
+          )}
+
+          {recordingStatus === "recording" && (
+            <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-3 py-1 rounded-full text-xs flex items-center">
+              <div className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></div>
+              Recording...
+            </div>
+          )}
+        </form>
+      )}
+    </div>
+  );
+};
+
+export default ChatWithUser;
