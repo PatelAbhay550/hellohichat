@@ -505,7 +505,7 @@ const ChatWithUser = () => {
   };
 
   if (!currentUser) {
-    return <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-slate-900 text-gray-800 dark:text-gray-200">Loading user...</div>;
+    return <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-slate-900 text-gray-800 dark:text-gray-200">Loading Chat...</div>;
   }
 
   return (
@@ -516,9 +516,9 @@ const ChatWithUser = () => {
           <IoIosArrowRoundBack size={30} />
         </Link>
         <div className="ml-3 flex items-center gap-3 flex-grow">
-          {receiverData?.photoURL ? (
+          {receiverData?.profileImageUrl ? (
             <img
-              src={receiverData.photoURL}
+              src={receiverData.profileImageUrl}
               alt="User avatar"
               className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-gray-300 dark:border-slate-600"
             />
@@ -592,22 +592,26 @@ const ChatWithUser = () => {
       )}
 
       {/* Messages */}
-     <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white dark:bg-[#0f172a]">
-  {messages.map((msg) => (
-    <div
-      key={msg.id}
-      className={`flex flex-col max-w-[80%] sm:max-w-[70%] p-3 rounded-2xl shadow-md group relative ${
-        msg.sender === currentUser.uid
-          ? "bg-blue-500 text-white self-end rounded-br-none"
-          : "bg-gray-100 dark:bg-slate-800 dark:text-slate-100 self-start rounded-bl-none"
-      }`}
-      onContextMenu={(e) =>
-        handleLongPress(e, msg.id, msg.text, msg.sender)
-      }
-    >
-      {/* Pin indicator */}
+      <div className="flex-1 overflow-y-auto w-full p-4 space-y-3 bg-white dark:bg-[#0f172a]">
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className={`flex ${msg.sender === currentUser.uid ? "justify-end" : "justify-start"} w-full`}
+          >
+            <div
+              className={`flex flex-col max-w-[90%] sm:max-w-[70%] p-3 rounded-2xl shadow-md group relative
+                ${msg.sender === currentUser.uid
+                  ? "bg-blue-500 text-white rounded-br-none"
+                  : "bg-gray-100 dark:bg-slate-800 dark:text-slate-100 rounded-bl-none"
+                }
+              `}
+              onContextMenu={(e) =>
+                handleLongPress(e, msg.id, msg.text, msg.sender)
+              }
+            >
+              
       {pinnedMessages.some((m) => m.messageId === msg.id) && (
-        <div className="absolute -top-2 -left-2 text-blue-600 dark:text-blue-400">
+        <div className="absolute -top-2 -right-2 text-blue-600 dark:text-blue-400">
           <FaThumbtack size={14} />
         </div>
       )}
@@ -740,40 +744,43 @@ const ChatWithUser = () => {
         </div>
       )}
     </div>
+    </div>
   ))}
-  <div ref={messagesEndRef} />
-</div>
+{messages.length === 0 && (
+  <div className="flex items-center justify-center h-full text-gray-500 dark:text-slate-400">
+    <p className="text-sm">No messages yet. Start the conversation!</p>
+  </div>
+)}
+<div ref={messagesEndRef} />
 
 
-      
-      {/* Message Editing Input */}
-      {editingMessageId && (
-        <div className="p-3 bg-gray-100 dark:bg-slate-700 border-t border-gray-300 dark:border-slate-600 flex items-center gap-2">
-          <input
-            type="text"
-            className="flex-1 p-2.5 rounded-lg border border-gray-300 dark:border-slate-500 bg-white dark:bg-slate-800 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-            value={editingMessageText}
-            onChange={(e) => setEditingMessageText(e.target.value)}
-            onKeyDown={(e) => { 
-              if (e.key === 'Enter') handleEditMessage(); 
-              if (e.key === "Escape") cancelEdit(); 
-            }}
-            autoFocus
-          />
-          <button
-            onClick={handleEditMessage}
-            className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-          >
-            Save
-          </button>
-          <button
-            onClick={cancelEdit}
-            className="px-4 py-2.5 bg-gray-400 text-white rounded-lg hover:bg-gray-500 dark:bg-slate-500 dark:hover:bg-slate-400"
-          >
-            Cancel
-          </button>
-        </div>
-      )}
+     {editingMessageId && (
+  <div className="p-3 bg-gray-100 dark:bg-slate-700 border-t border-gray-300 dark:border-slate-600 flex items-center gap-2">
+    <input
+      type="text"
+      className="flex-1 p-2.5 rounded-lg border border-gray-300 dark:border-slate-500 bg-white dark:bg-slate-800 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+      value={editingMessageText}
+      onChange={(e) => setEditingMessageText(e.target.value)}
+      onKeyDown={(e) => { 
+        if (e.key === 'Enter') handleEditMessage(); 
+        if (e.key === "Escape") cancelEdit(); 
+      }}
+      autoFocus
+    />
+    <button
+      onClick={handleEditMessage}
+      className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+    >
+      Save
+    </button>
+    <button
+      onClick={cancelEdit}
+      className="px-4 py-2.5 bg-gray-400 text-white rounded-lg hover:bg-gray-500 dark:bg-slate-500 dark:hover:bg-slate-400"
+    >
+      Cancel
+    </button>
+  </div>
+)}
 
       {/* Audio recording popup */}
       {showAudioPopup && (
@@ -910,6 +917,7 @@ const ChatWithUser = () => {
           )}
         </form>
       )}
+    </div>
     </div>
   );
 };
