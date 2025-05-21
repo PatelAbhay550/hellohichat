@@ -36,6 +36,7 @@ import {
   FaMoon,
   FaThumbtack,
 } from "react-icons/fa";
+import { useReactMediaRecorder } from "react-media-recorder";
 
 const ChatWithUser = () => {
   const { uid: receiverUid } = useParams();
@@ -48,13 +49,7 @@ const ChatWithUser = () => {
   const [receiverData, setReceiverData] = useState(null);
   const [pinnedMessages, setPinnedMessages] = useState([]);
 
-  // Audio Recording States
-  const [isRecording, setIsRecording] = useState(false);
-  const [mediaRecorder, setMediaRecorder] = useState(null);
-  const [audioBlob, setAudioBlob] = useState(null);
-  const [audioURL, setAudioURL] = useState(null);
-  const [countdown, setCountdown] = useState(30);
-  const [showAudioPopup, setShowAudioPopup] = useState(false);
+  // Audio states
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const audioPlayerRef = useRef(null);
   const [currentPlayingAudioUrl, setCurrentPlayingAudioUrl] = useState(null);
@@ -62,31 +57,44 @@ const ChatWithUser = () => {
   // Message Editing States
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editingMessageText, setEditingMessageText] = useState("");
-  
-  const countdownRef = useRef(null);
-  const [longPressedMessageText, setLongPressedMessageText] = useState("");
-  const [longPressedSenderId, setLongPressedSenderId] = useState(null);
   const [longPressedMessageId, setLongPressedMessageId] = useState(null);
-  
 
   // Theme State
   const [theme, setTheme] = useState("light");
   const [systemTheme, setSystemTheme] = useState(null);
 
+  // Audio recording using react-media-recorder
+  const {
+    status: recordingStatus,
+    startRecording,
+    stopRecording,
+    mediaBlobUrl,
+    clearBlobUrl,
+    error: recordingError,
+  } = useReactMediaRecorder({
+    audio: true,
+    blobPropertyBag: { type: "audio/webm" },
+    onStop: (blobUrl, blob) => {
+      setShowAudioPopup(true);
+    },
+  });
+
+  // Audio popup state
+  const [showAudioPopup, setShowAudioPopup] = useState(false);
+
   // Fetch and listen to system theme changes
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     setSystemTheme(mediaQuery.matches ? "dark" : "light");
-    
+
     const handler = (e) => {
       setSystemTheme(e.matches ? "dark" : "light");
-      // Only update theme if user hasn't explicitly set a preference
       const savedTheme = localStorage.getItem("chatTheme");
       if (!savedTheme) {
         setTheme(e.matches ? "dark" : "light");
       }
     };
-    
+
     mediaQuery.addEventListener("change", handler);
     return () => mediaQuery.removeEventListener("change", handler);
   }, []);
@@ -97,7 +105,6 @@ const ChatWithUser = () => {
     if (savedTheme) {
       setTheme(savedTheme);
     } else {
-      // Use system theme if no preference saved
       setTheme(systemTheme || "light");
     }
   }, [systemTheme]);
@@ -146,9 +153,12 @@ const ChatWithUser = () => {
           pinnedRef,
           where("chatId", "==", `${currentUser.uid}_${receiverUid}`)
         );
-        
+
         const unsub = onSnapshot(q, (snapshot) => {
-          const pinned = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const pinned = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
           setPinnedMessages(pinned);
         });
 
@@ -224,7 +234,7 @@ const ChatWithUser = () => {
     try {
       const imageBitmap = await createImageBitmap(file);
       const canvas = document.createElement("canvas");
-      
+
       const MAX_WIDTH = 1920;
       const MAX_HEIGHT = 1080;
       let { width, height } = imageBitmap;
@@ -242,7 +252,7 @@ const ChatWithUser = () => {
       }
       canvas.width = width;
       canvas.height = height;
-      
+
       const ctx = canvas.getContext("2d");
       ctx.drawImage(imageBitmap, 0, 0, width, height);
 
@@ -309,116 +319,63 @@ const ChatWithUser = () => {
       const senderRef = doc(db, "hellohi-users", currentUser.uid);
       await updateDoc(senderRef, { chattedWith: arrayUnion(receiverUid) });
       const receiverRef = doc(db, "hellohi-users", receiverUid);
-      await updateDoc(receiverRef, { chattedWith: arrayUnion(currentUser.uid) });
+      await updateDoc(receiverRef, {
+        chattedWith: arrayUnion(currentUser.uid),
+      });
 
       setText("");
       setImage(null);
       setImagePreview(null);
       removeImage();
-      setAudioBlob(null);
-      setAudioURL(null);
+      clearBlobUrl();
       setShowAudioPopup(false);
     } catch (error) {
       console.error("Error sending message:", error);
     }
   };
 
-  // Audio recording functions
-  useEffect(() => {
-    let intervalId;
-    if (isRecording && countdown > 0) {
-      intervalId = setInterval(() => {
-        setCountdown((prev) => prev - 1);
-      }, 1000);
-    } else if (countdown === 0 && isRecording) {
-      stopRecording();
-    }
-    countdownRef.current = intervalId;
-    return () => clearInterval(intervalId);
-  }, [isRecording, countdown]);
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-      const chunks = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      };
-
-      recorder.onstop = () => {
-        const completeBlob = new Blob(chunks, { type: "audio/webm" });
-        const url = URL.createObjectURL(completeBlob);
-        setAudioBlob(completeBlob);
-        setAudioURL(url);
-      };
-
-      recorder.start();
-      setIsRecording(true);
-      setMediaRecorder(recorder);
-      setCountdown(30);
-      setAudioBlob(null);
-      setAudioURL(null);
-    } catch (error) {
-      console.error("Error starting recording:", error);
-      alert("Could not start recording. Please ensure microphone permission is granted.");
-      setShowAudioPopup(false);
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorder) {
-      mediaRecorder.stop();
-      mediaRecorder.stream.getTracks().forEach((track) => track.stop());
-      setMediaRecorder(null);
-      setIsRecording(false);
-    }
-    if(countdownRef.current) clearInterval(countdownRef.current);
-  };
-  
-  useEffect(() => {
-    if (showAudioPopup && !isRecording && !audioBlob) {
-      startRecording();
-    }
-  }, [showAudioPopup, isRecording, audioBlob]);
-
-  const cancelRecording = () => {
-    stopRecording();
-    setAudioBlob(null);
-    setAudioURL(null);
-    setShowAudioPopup(false);
-    setCountdown(30);
-  };
-
-  const sendAudio = () => {
-    if (audioBlob) {
-      handleSend(audioBlob);
-    }
-  };
-
+  // Handle audio playback
   const togglePlayAudio = (url) => {
-    if (audioPlayerRef.current && currentPlayingAudioUrl === url && !audioPlayerRef.current.paused) {
-      audioPlayerRef.current.pause();
+    if (currentPlayingAudioUrl === url) {
+      audioPlayerRef.current?.pause();
       setIsPlayingAudio(false);
+      setCurrentPlayingAudioUrl(null);
     } else {
-      if (audioPlayerRef.current && !audioPlayerRef.current.paused) {
-        audioPlayerRef.current.pause();
-      }
-      audioPlayerRef.current = new Audio(url);
-      audioPlayerRef.current.play().catch(error => console.error("Error playing audio:", error));
       setCurrentPlayingAudioUrl(url);
       setIsPlayingAudio(true);
-      audioPlayerRef.current.onended = () => {
-        setIsPlayingAudio(false);
-        setCurrentPlayingAudioUrl(null);
-      };
-      audioPlayerRef.current.onpause = () => {
-        if (audioPlayerRef.current && audioPlayerRef.current.src === url) {
-          setIsPlayingAudio(false);
-        }
-      };
+      setTimeout(() => {
+        audioPlayerRef.current?.play();
+      }, 0);
     }
+  };
+
+  // Handle audio ended
+  const handleAudioEnded = () => {
+    setIsPlayingAudio(false);
+    setCurrentPlayingAudioUrl(null);
+  };
+
+  // Handle send audio
+  const handleSendAudio = async () => {
+    if (!mediaBlobUrl) return;
+
+    try {
+      const response = await fetch(mediaBlobUrl);
+      const blob = await response.blob();
+      const audioFile = new File([blob], "recording.webm", {
+        type: "audio/webm",
+      });
+
+      await handleSend(audioFile);
+    } catch (err) {
+      console.error("Error sending audio:", err);
+    }
+  };
+
+  // Cancel audio recording
+  const cancelAudioRecording = () => {
+    clearBlobUrl();
+    setShowAudioPopup(false);
   };
 
   // Message actions
@@ -453,9 +410,10 @@ const ChatWithUser = () => {
       try {
         const messageRef = doc(db, "hellohi-messages", messageIdToDelete);
         await deleteDoc(messageRef);
-        
-        // Also remove from pinned messages if it was pinned
-        const pinnedMessage = pinnedMessages.find(m => m.messageId === messageIdToDelete);
+
+        const pinnedMessage = pinnedMessages.find(
+          (m) => m.messageId === messageIdToDelete
+        );
         if (pinnedMessage) {
           await deleteDoc(doc(db, "hellohi-pinned-messages", pinnedMessage.id));
         }
@@ -476,20 +434,20 @@ const ChatWithUser = () => {
   // Pin/unpin message
   const togglePinMessage = async (messageId) => {
     if (!currentUser || !receiverUid) return;
-    
+
     try {
       const chatId = `${currentUser.uid}_${receiverUid}`;
-      const isPinned = pinnedMessages.some(m => m.messageId === messageId);
-      
+      const isPinned = pinnedMessages.some((m) => m.messageId === messageId);
+
       if (isPinned) {
-        // Unpin
-        const pinnedMessage = pinnedMessages.find(m => m.messageId === messageId);
+        const pinnedMessage = pinnedMessages.find(
+          (m) => m.messageId === messageId
+        );
         if (pinnedMessage) {
           await deleteDoc(doc(db, "hellohi-pinned-messages", pinnedMessage.id));
         }
       } else {
-        // Pin
-        const message = messages.find(m => m.id === messageId);
+        const message = messages.find((m) => m.id === messageId);
         if (message) {
           await addDoc(collection(db, "hellohi-pinned-messages"), {
             chatId,
@@ -506,14 +464,21 @@ const ChatWithUser = () => {
   };
 
   if (!currentUser) {
-    return <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-slate-900 text-gray-800 dark:text-gray-200">Loading Chat...</div>;
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-slate-900 text-gray-800 dark:text-gray-200">
+        Loading Chat...
+      </div>
+    );
   }
 
   return (
     <div className="flex flex-col h-screen max-w-3xl mx-auto bg-white dark:bg-slate-800 shadow-lg rounded-lg overflow-hidden">
       {/* Header */}
       <div className="flex items-center p-3 sm:p-4 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800">
-        <Link href="/chats" className="text-2xl text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-500">
+        <Link
+          href="/chats"
+          className="text-2xl text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-500"
+        >
           <IoIosArrowRoundBack size={30} />
         </Link>
         <div className="ml-3 flex items-center gap-3 flex-grow">
@@ -524,10 +489,9 @@ const ChatWithUser = () => {
               className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-gray-300 dark:border-slate-600"
             />
           ) : (
-            <><div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gray-300 dark:bg-slate-600 flex items-center justify-center text-gray-600 dark:text-gray-300 font-bold text-xl">
-                {receiverData?.name?.[0]?.toUpperCase() || "U"}
-              </div>
-            </>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gray-300 dark:bg-slate-600 flex items-center justify-center text-gray-600 dark:text-gray-300 font-bold text-xl">
+              {receiverData?.name?.[0]?.toUpperCase() || "U"}
+            </div>
           )}
           <div>
             <h2 className="text-base sm:text-lg font-semibold text-gray-800 dark:text-white">
@@ -544,14 +508,16 @@ const ChatWithUser = () => {
           className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-300 font-bold"
           title="Toggle theme"
         >
-          {theme === "light" ? <IoMdMore size={20} /> : <IoMdMore size={20} />}
+          {theme === "light" ? <FaMoon size={20} /> : <FaSun size={20} />}
         </button>
       </div>
 
-      
+      {/* Pinned messages section */}
       {pinnedMessages.length > 0 && (
         <div className="border-b border-gray-200 dark:border-slate-700 bg-blue-50 dark:bg-slate-750 p-2">
-          <h3 className="text-xs font-semibold text-gray-500 dark:text-slate-400 mb-1 px-2">PINNED MESSAGES</h3>
+          <h3 className="text-xs font-semibold text-gray-500 dark:text-slate-400 mb-1 px-2">
+            PINNED MESSAGES
+          </h3>
           <div className="space-y-2 max-h-40 overflow-y-auto">
             {pinnedMessages.map((pinned) => (
               <div
@@ -576,6 +542,26 @@ const ChatWithUser = () => {
                         {pinned.messageData.text}
                       </p>
                     )}
+                    {pinned.messageData.audio && (
+                      <button
+                        onClick={() =>
+                          togglePlayAudio(pinned.messageData.audio)
+                        }
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium mt-1 ${
+                          pinned.messageData.sender === currentUser.uid
+                            ? "bg-blue-400 hover:bg-blue-300 dark:bg-blue-600 dark:hover:bg-blue-500"
+                            : "bg-gray-300 hover:bg-gray-400 dark:bg-slate-600 dark:hover:bg-slate-500"
+                        }`}
+                      >
+                        {isPlayingAudio &&
+                        currentPlayingAudioUrl === pinned.messageData.audio ? (
+                          <FaPauseCircle />
+                        ) : (
+                          <FaPlayCircle />
+                        )}
+                        <span>Audio</span>
+                      </button>
+                    )}
                   </div>
                   <button
                     onClick={() => togglePinMessage(pinned.messageData.id)}
@@ -596,24 +582,37 @@ const ChatWithUser = () => {
         </div>
       )}
 
+      {/* Messages area */}
       <div className="flex-1 overflow-y-auto w-full p-4 space-y-3 bg-white dark:bg-[#0f172a]">
         {/* Group messages by date */}
         {(() => {
-          // Helper to format date header
           const formatDateHeader = (date) => {
             const today = new Date();
-            const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-            const nowDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-            const diffDays = Math.round((nowDate - msgDate) / (1000 * 60 * 60 * 24));
+            const msgDate = new Date(
+              date.getFullYear(),
+              date.getMonth(),
+              date.getDate()
+            );
+            const nowDate = new Date(
+              today.getFullYear(),
+              today.getMonth(),
+              today.getDate()
+            );
+            const diffDays = Math.round(
+              (nowDate - msgDate) / (1000 * 60 * 60 * 24)
+            );
             if (diffDays === 0) return "Today";
             if (diffDays === 1) return "Yesterday";
             if (diffDays < 7) {
-              return msgDate.toLocaleDateString(undefined, { weekday: "long" });
+              return date.toLocaleDateString(undefined, { weekday: "long" });
             }
-            return msgDate.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit", year: "2-digit" });
+            return date.toLocaleDateString(undefined, {
+              day: "2-digit",
+              month: "2-digit",
+              year: "2-digit",
+            });
           };
 
-          // Group messages by date string
           const grouped = {};
           messages.forEach((msg) => {
             const ts = msg.timestamp?.seconds
@@ -630,7 +629,9 @@ const ChatWithUser = () => {
 
           return sortedKeys.length === 0 ? (
             <div className="flex items-center justify-center h-full text-gray-500 dark:text-slate-400">
-              <p className="text-sm">No messages yet. Start the conversation!</p>
+              <p className="text-sm">
+                No messages yet. Start the conversation!
+              </p>
             </div>
           ) : (
             sortedKeys.map((dateKey) => (
@@ -643,20 +644,24 @@ const ChatWithUser = () => {
                 {grouped[dateKey].map((msg) => (
                   <div
                     key={msg.id}
-                    className={`flex ${msg.sender === currentUser.uid ? "justify-end" : "justify-start"} mb-3 w-full`}
+                    className={`flex ${
+                      msg.sender === currentUser.uid
+                        ? "justify-end"
+                        : "justify-start"
+                    } mb-3 w-full`}
                   >
                     <div
                       className={`flex flex-col max-w-[90%] sm:max-w-[70%] p-3 rounded-2xl shadow-md group relative
-                        ${msg.sender === currentUser.uid
-                          ? "bg-blue-500 text-white rounded-br-none"
-                          : "bg-gray-100 dark:bg-slate-800 dark:text-slate-100 rounded-bl-none"
+                        ${
+                          msg.sender === currentUser.uid
+                            ? "bg-blue-500 text-white rounded-br-none"
+                            : "bg-gray-100 dark:bg-slate-800 dark:text-slate-100 rounded-bl-none"
                         }
                       `}
                       onContextMenu={(e) =>
                         handleLongPress(e, msg.id, msg.text, msg.sender)
                       }
                     >
-
                       {pinnedMessages.some((m) => m.messageId === msg.id) && (
                         <div className="absolute -top-2 -right-2 text-blue-600 dark:text-blue-400">
                           <FaThumbtack size={14} />
@@ -681,7 +686,8 @@ const ChatWithUser = () => {
                               : "bg-gray-300 hover:bg-gray-400 dark:bg-slate-600 dark:hover:bg-slate-500"
                           }`}
                         >
-                          {isPlayingAudio && currentPlayingAudioUrl === msg.audio ? (
+                          {isPlayingAudio &&
+                          currentPlayingAudioUrl === msg.audio ? (
                             <FaPauseCircle />
                           ) : (
                             <FaPlayCircle />
@@ -690,16 +696,17 @@ const ChatWithUser = () => {
                         </button>
                       )}
 
-                      {/* Inline editing for message */}
                       {editingMessageId === msg.id ? (
                         <div className="flex items-center gap-2">
                           <input
                             type="text"
                             className="flex-1 p-2.5 rounded-lg border border-gray-300 dark:border-slate-500 bg-white dark:bg-slate-800 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                             value={editingMessageText}
-                            onChange={(e) => setEditingMessageText(e.target.value)}
+                            onChange={(e) =>
+                              setEditingMessageText(e.target.value)
+                            }
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleEditMessage();
+                              if (e.key === "Enter") handleEditMessage();
                               if (e.key === "Escape") cancelEdit();
                             }}
                             autoFocus
@@ -725,7 +732,6 @@ const ChatWithUser = () => {
                         )
                       )}
 
-                      {/* Timestamp + status */}
                       <div
                         className={`text-xs mt-2 flex items-center gap-1 ${
                           msg.sender === currentUser.uid
@@ -769,7 +775,6 @@ const ChatWithUser = () => {
                         )}
                       </div>
 
-                      {/* Message Actions */}
                       {longPressedMessageId === msg.id && (
                         <div className="absolute -top-12 right-0 sm:left-0 sm:-top-2 flex gap-1 bg-white dark:bg-slate-700 p-2 rounded-xl shadow-lg z-10">
                           {msg.sender === currentUser.uid && (
@@ -805,7 +810,9 @@ const ChatWithUser = () => {
                           >
                             <FaThumbtack
                               className={`${
-                                pinnedMessages.some((m) => m.messageId === msg.id)
+                                pinnedMessages.some(
+                                  (m) => m.messageId === msg.id
+                                )
                                   ? "text-blue-600 dark:text-blue-400"
                                   : "text-gray-500 dark:text-gray-300"
                               }`}
@@ -830,57 +837,64 @@ const ChatWithUser = () => {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Hidden audio player */}
+      <audio
+        ref={audioPlayerRef}
+        src={currentPlayingAudioUrl || undefined}
+        onEnded={handleAudioEnded}
+      />
+
       {/* Audio recording popup */}
       {showAudioPopup && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex justify-center items-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 w-full max-w-sm flex flex-col items-center space-y-5 shadow-xl">
-            <p className="text-lg font-semibold text-gray-800 dark:text-slate-100">
-              {isRecording ? "Recording Audio..." : (audioBlob ? "Review Audio" : "Ready to Record")}
-            </p>
-            <p className={`text-3xl font-mono ${isRecording && countdown <=10 ? 'text-red-500' : 'text-gray-700 dark:text-slate-200'}`}>
-                {Math.floor(countdown / 60).toString().padStart(2, '0')}:{(countdown % 60).toString().padStart(2, '0')}
-            </p>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-700 p-6 rounded-xl w-80">
+            <h3 className="text-lg font-semibold mb-4 dark:text-white">
+              Audio Recording
+            </h3>
 
-            {audioURL && !isRecording && (
-              <audio controls src={audioURL} className="w-full rounded-lg my-2 h-10" />
-            )}
-            
-            <div className="flex gap-3 justify-center w-full">
-             {!audioBlob ? (
-                isRecording ? (
-                    <button
-                    onClick={stopRecording}
-                    className="px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium w-full"
-                    >
-                    Stop
-                    </button>
-                ) : (
-                    <button
-                    onClick={startRecording}
-                    className="px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium w-full"
-                    >
-                    Record
-                    </button>
-                )
-             ) : (
-                <>
-                    <button
-                        onClick={sendAudio}
-                        className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex-1"
-                    > Send </button>
-                    <button
-                        onClick={startRecording}
-                        className="px-5 py-2.5 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 text-sm font-medium flex-1"
-                    > Re-record </button>
-                </>
-             )}
+            <div className="flex justify-center mb-4">
+              {mediaBlobUrl ? (
+                <button
+                  onClick={() => togglePlayAudio(mediaBlobUrl)}
+                  className="p-4 bg-blue-100 dark:bg-slate-600 rounded-full"
+                >
+                  {isPlayingAudio && currentPlayingAudioUrl === mediaBlobUrl ? (
+                    <FaPauseCircle
+                      size={32}
+                      className="text-blue-600 dark:text-blue-400"
+                    />
+                  ) : (
+                    <FaPlayCircle
+                      size={32}
+                      className="text-blue-600 dark:text-blue-400"
+                    />
+                  )}
+                </button>
+              ) : (
+                <div className="p-4 bg-gray-100 dark:bg-slate-600 rounded-full">
+                  <FaMicrophone
+                    size={32}
+                    className="text-gray-500 dark:text-gray-300"
+                  />
+                </div>
+              )}
             </div>
-             <button
-                onClick={cancelRecording}
-                className="mt-2 px-5 py-2.5 bg-gray-300 text-gray-700 dark:bg-slate-600 dark:text-slate-200 rounded-lg hover:bg-gray-400 dark:hover:bg-slate-500 text-sm font-medium w-full"
-            >
+
+            <div className="flex justify-between mt-4">
+              <button
+                onClick={cancelAudioRecording}
+                className="px-4 py-2 bg-gray-300 dark:bg-slate-500 text-gray-800 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-slate-400"
+              >
                 Cancel
-            </button>
+              </button>
+              <button
+                onClick={handleSendAudio}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+                disabled={!mediaBlobUrl}
+              >
+                Send
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -888,8 +902,11 @@ const ChatWithUser = () => {
       {/* Input area */}
       {!editingMessageId && (
         <form
-          onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-          className="p-3 sm:p-4 border-t border-gray-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white flex items-end gap-2 sm:gap-3 bg-gray-50 "
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSend();
+          }}
+          className="p-3 sm:p-4 border-t border-gray-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white flex items-end gap-2 sm:gap-3 bg-gray-50 relative"
         >
           {!imagePreview && (
             <label
@@ -900,18 +917,28 @@ const ChatWithUser = () => {
               <FaImage size={22} />
             </label>
           )}
-          <input id="imageUpload" type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+          <input
+            id="imageUpload"
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageChange}
+          />
 
           {imagePreview && (
             <div className="relative w-16 h-16 mb-1">
-              <img src={imagePreview} alt="Preview" className="rounded-md object-cover w-full h-full shadow-sm" />
+              <img
+                src={imagePreview}
+                alt="Preview"
+                className="rounded-md object-cover w-full h-full shadow-sm"
+              />
               <button
                 type="button"
                 onClick={removeImage}
                 className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow-md hover:bg-red-600"
                 title="Remove Image"
               >
-                <FaTimesCircle size={18}/>
+                <FaTimesCircle size={18} />
               </button>
             </div>
           )}
@@ -922,29 +949,24 @@ const ChatWithUser = () => {
             className="flex-1 px-4 py-2.5 rounded-2xl border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 resize-none overflow-y-auto max-h-24"
             value={text}
             onChange={(e) => {
-                setText(e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = `${e.target.scrollHeight}px`;
+              setText(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = `${e.target.scrollHeight}px`;
             }}
             onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                    e.target.style.height = 'auto';
-                }
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+                e.target.style.height = "auto";
+              }
             }}
-            disabled={showAudioPopup}
+            disabled={recordingStatus === "recording"}
           />
 
           {text.trim() || image ? (
             <button
               type="submit"
-              disabled={showAudioPopup || (!text.trim() && !image)}
-              className={`p-2.5 rounded-full text-white ${
-                (text.trim() || image) && !showAudioPopup
-                  ? "bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-                  : "bg-gray-400 dark:bg-slate-500 cursor-not-allowed"
-              }`}
+              className="p-2.5 rounded-full bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white"
               title="Send Message"
             >
               <FaPaperPlane size={20} />
@@ -952,16 +974,29 @@ const ChatWithUser = () => {
           ) : (
             <button
               type="button"
-              onClick={() => {
-                if (editingMessageId) return;
-                setShowAudioPopup(true);
-              }}
-              title="Record Audio"
-              className="p-2.5 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-600"
-              disabled={showAudioPopup || editingMessageId}
+              onClick={
+                recordingStatus === "recording" ? stopRecording : startRecording
+              }
+              title={
+                recordingStatus === "recording"
+                  ? "Stop Recording"
+                  : "Record Audio"
+              }
+              className={`p-2.5 rounded-full ${
+                recordingStatus === "recording"
+                  ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
+                  : "text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-600"
+              }`}
             >
               <FaMicrophone size={22} />
             </button>
+          )}
+
+          {recordingStatus === "recording" && (
+            <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-3 py-1 rounded-full text-xs flex items-center">
+              <div className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></div>
+              Recording...
+            </div>
           )}
         </form>
       )}
