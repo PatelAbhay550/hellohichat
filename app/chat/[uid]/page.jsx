@@ -848,6 +848,7 @@ const ChatWithUser = () => {
       />
 
       {/* Audio recording popup */}
+       {/* Audio recording popup */}
       {showAudioPopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-slate-700 p-6 rounded-xl w-80">
