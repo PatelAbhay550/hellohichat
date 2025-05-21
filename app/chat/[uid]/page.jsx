@@ -49,10 +49,6 @@ const ChatWithUser = () => {
   const [receiverData, setReceiverData] = useState(null);
   const [pinnedMessages, setPinnedMessages] = useState([]);
 
-  // Multi-selection states
-  const [selectedMessages, setSelectedMessages] = useState([]);
-  const [isSelectMode, setIsSelectMode] = useState(false);
-
   // Audio states
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const audioPlayerRef = useRef(null);
@@ -386,55 +382,8 @@ const ChatWithUser = () => {
   const handleLongPress = (e, messageId, messageText, senderId) => {
     e.preventDefault();
     if (senderId === currentUser?.uid) {
-      if (isSelectMode) {
-        // Toggle selection in select mode
-        setSelectedMessages(prev =>
-          prev.includes(messageId)
-            ? prev.filter(id => id !== messageId)
-            : [...prev, messageId]
-        );
-      } else {
-        // Show single message actions
-        setLongPressedMessageId(messageId);
-        setEditingMessageText(messageText || "");
-      }
-    }
-  };
-
-  // Toggle select mode
-  const toggleSelectMode = () => {
-    setIsSelectMode(!isSelectMode);
-    if (!isSelectMode) {
-      setSelectedMessages([]); // Clear selection when exiting
-    }
-    setLongPressedMessageId(null); // Clear any single message actions
-  };
-
-  // Bulk delete messages
-  const handleBulkDelete = async () => {
-    if (selectedMessages.length === 0) return;
-    
-    try {
-      // Delete messages from Firestore
-      const batch = [];
-      selectedMessages.forEach(messageId => {
-        const messageRef = doc(db, "hellohi-messages", messageId);
-        batch.push(deleteDoc(messageRef));
-        
-        // Also delete from pinned if needed
-        const pinnedMessage = pinnedMessages.find(m => m.messageId === messageId);
-        if (pinnedMessage) {
-          batch.push(deleteDoc(doc(db, "hellohi-pinned-messages", pinnedMessage.id)));
-        }
-      });
-      
-      await Promise.all(batch);
-      
-      // Clear selection and exit select mode
-      setSelectedMessages([]);
-      setIsSelectMode(false);
-    } catch (error) {
-      console.error("Error deleting messages:", error);
+      setLongPressedMessageId(messageId);
+      setEditingMessageText(messageText || "");
     }
   };
 
@@ -561,44 +510,7 @@ const ChatWithUser = () => {
         >
           {theme === "light" ? <FaMoon size={20} /> : <FaSun size={20} />}
         </button>
-
-        {!isSelectMode && (
-          <button
-            onClick={toggleSelectMode}
-            className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-300"
-            title="Select messages"
-          >
-            <IoMdMore size={20} />
-          </button>
-        )}
       </div>
-
-      {/* Selection mode toolbar */}
-      {isSelectMode && (
-        <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-slate-700 border-b border-gray-200 dark:border-slate-600">
-          <div className="flex items-center">
-            <button
-              onClick={toggleSelectMode}
-              className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-full"
-            >
-              <FaTimesCircle size={20} />
-            </button>
-            <span className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-              {selectedMessages.length} selected
-            </span>
-          </div>
-          
-          <div className="flex gap-2">
-            <button
-              onClick={handleBulkDelete}
-              className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-slate-600 rounded-full"
-              disabled={selectedMessages.length === 0}
-            >
-              <FaTrashAlt size={18} />
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Pinned messages section */}
       {pinnedMessages.length > 0 && (
@@ -745,37 +657,11 @@ const ChatWithUser = () => {
                             ? "bg-blue-500 text-white rounded-br-none"
                             : "bg-gray-100 dark:bg-slate-800 dark:text-slate-100 rounded-bl-none"
                         }
-                        ${
-                          isSelectMode && selectedMessages.includes(msg.id)
-                            ? "ring-2 ring-blue-400 dark:ring-blue-500"
-                            : ""
-                        }
                       `}
                       onContextMenu={(e) =>
                         handleLongPress(e, msg.id, msg.text, msg.sender)
                       }
-                      onClick={() => {
-                        if (isSelectMode && msg.sender === currentUser.uid) {
-                          setSelectedMessages((prev) =>
-                            prev.includes(msg.id)
-                              ? prev.filter((id) => id !== msg.id)
-                              : [...prev, msg.id]
-                          );
-                        }
-                      }}
                     >
-                      {/* Selection checkbox */}
-                      {isSelectMode && msg.sender === currentUser.uid && (
-                        <div className="absolute -left-2 -top-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedMessages.includes(msg.id)}
-                            onChange={() => {}}
-                            className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                          />
-                        </div>
-                      )}
-
                       {pinnedMessages.some((m) => m.messageId === msg.id) && (
                         <div className="absolute -top-2 -right-2 text-blue-600 dark:text-blue-400">
                           <FaThumbtack size={14} />
@@ -889,7 +775,7 @@ const ChatWithUser = () => {
                         )}
                       </div>
 
-                      {longPressedMessageId === msg.id && !isSelectMode && (
+                      {longPressedMessageId === msg.id && (
                         <div className="absolute -top-12 right-0 sm:left-0 sm:-top-2 flex gap-1 bg-white dark:bg-slate-700 p-2 rounded-xl shadow-lg z-10">
                           {msg.sender === currentUser.uid && (
                             <>
@@ -1056,65 +942,3 @@ const ChatWithUser = () => {
               </button>
             </div>
           )}
-          <textarea
-            rows={1}
-            placeholder="Type a message..."
-            className="flex-1 px-4 py-2.5 rounded-2xl border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 resize-none overflow-y-auto max-h-24"
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              e.target.style.height = "auto";
-              e.target.style.height = `${e.target.scrollHeight}px`;
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-                e.target.style.height = "auto";
-              }
-            }}
-            disabled={recordingStatus === "recording"}
-          />
-
-          {text.trim() || image ? (
-            <button
-              type="submit"
-              className="p-2.5 rounded-full bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white"
-              title="Send Message"
-            >
-              <FaPaperPlane size={20} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={
-                recordingStatus === "recording" ? stopRecording : startRecording
-              }
-              title={
-                recordingStatus === "recording"
-                  ? "Stop Recording"
-                  : "Record Audio"
-              }
-              className={`p-2.5 rounded-full ${
-                recordingStatus === "recording"
-                  ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
-                  : "text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-600"
-              }`}
-            >
-              <FaMicrophone size={22} />
-            </button>
-          )}
-
-          {recordingStatus === "recording" && (
-            <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-3 py-1 rounded-full text-xs flex items-center">
-              <div className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></div>
-              Recording...
-            </div>
-          )}
-        </form>
-      )}
-    </div>
-  );
-};
-
-export default ChatWithUser;
