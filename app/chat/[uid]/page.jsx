@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
-import { IoTrashBin } from "react-icons/io5";
 import { auth, db, storage } from "@/lib/firebase";
 import { IoIosArrowRoundBack } from "react-icons/io";
 import Link from "next/link";
@@ -67,6 +66,7 @@ const ChatWithUser = () => {
   const [longPressedMessageText, setLongPressedMessageText] = useState("");
   const [longPressedSenderId, setLongPressedSenderId] = useState(null);
   const [longPressedMessageId, setLongPressedMessageId] = useState(null);
+  
 
   // Theme State
   const [theme, setTheme] = useState("light");
@@ -528,7 +528,7 @@ const ChatWithUser = () => {
             </div>
           )}
           <div>
-            <h2 className="text-base sm:text-lg font-semibold text-gray-800 dark:text-black">
+            <h2 className="text-base sm:text-lg font-semibold text-gray-800 dark:text-white">
               {receiverData?.name || "User"}
             </h2>
             <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
@@ -579,7 +579,7 @@ const ChatWithUser = () => {
                     className="text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
                     title="Unpin message"
                   >
-                    <IoTrashBin size={14} />
+                    <FaThumbtack size={14} />
                   </button>
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -592,106 +592,158 @@ const ChatWithUser = () => {
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-100 dark:bg-slate-900">
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`max-w-xs rounded-xl p-3 shadow ${msg.sender === currentUser.uid ? 'bg-blue-100 self-end' : 'bg-gray-100 self-start'}`}
-            onContextMenu={(e) => handleLongPress(e, msg.id, msg.text, msg.sender)}
-          >
-            {/* Pin indicator for pinned messages */}
-            {pinnedMessages.some(m => m.messageId === msg.id) && (
-              <div className="absolute -top-2 -left-2 text-blue-600 dark:text-blue-400">
-                <FaThumbtack size={14} />
-              </div>
-            )}
+     <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white dark:bg-[#0f172a]">
+  {messages.map((msg) => (
+    <div
+      key={msg.id}
+      className={`flex flex-col max-w-[80%] sm:max-w-[70%] p-3 rounded-2xl shadow-md group relative ${
+        msg.sender === currentUser.uid
+          ? "bg-blue-500 text-white self-end rounded-br-none"
+          : "bg-gray-100 dark:bg-slate-800 dark:text-slate-100 self-start rounded-bl-none"
+      }`}
+      onContextMenu={(e) =>
+        handleLongPress(e, msg.id, msg.text, msg.sender)
+      }
+    >
+      {/* Pin indicator */}
+      {pinnedMessages.some((m) => m.messageId === msg.id) && (
+        <div className="absolute -top-2 -left-2 text-blue-600 dark:text-blue-400">
+          <FaThumbtack size={14} />
+        </div>
+      )}
 
-            {msg.image && (
-              <img
-                src={msg.image}
-                alt="sent image"
-                className="rounded-md mb-1.5 cursor-pointer max-w-full max-h-60 object-cover"
-                onClick={() => window.open(msg.image, "_blank")}
+      {msg.image && (
+        <img
+          src={msg.image}
+          alt="sent"
+          className="rounded-md mb-2 cursor-pointer max-w-full max-h-60 object-cover"
+          onClick={() => window.open(msg.image, "_blank")}
+        />
+      )}
+
+      {msg.audio && (
+        <button
+          onClick={() => togglePlayAudio(msg.audio)}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium mb-2 ${
+            msg.sender === currentUser.uid
+              ? "bg-blue-400 hover:bg-blue-300 dark:bg-blue-600 dark:hover:bg-blue-500"
+              : "bg-gray-300 hover:bg-gray-400 dark:bg-slate-600 dark:hover:bg-slate-500"
+          }`}
+        >
+          {isPlayingAudio && currentPlayingAudioUrl === msg.audio ? (
+            <FaPauseCircle />
+          ) : (
+            <FaPlayCircle />
+          )}
+          <span>Audio</span>
+        </button>
+      )}
+
+      {msg.text && (
+        <p className="whitespace-pre-wrap break-words text-sm sm:text-base leading-relaxed">
+          {msg.text}
+        </p>
+      )}
+
+      {/* Timestamp + status */}
+      <div
+        className={`text-xs mt-2 flex items-center gap-1 ${
+          msg.sender === currentUser.uid
+            ? "text-blue-100 dark:text-blue-300"
+            : "text-gray-500 dark:text-slate-400"
+        } self-end`}
+      >
+        {msg.edited && <span className="italic">(edited)</span>}
+        <span>
+          {msg.timestamp
+            ? new Date(
+                msg.timestamp.seconds * 1000
+              ).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "sending..."}
+        </span>
+
+        {msg.sender === currentUser.uid && (
+          <>
+            {msg.status === "sent" && (
+              <FaCheckDouble
+                className="text-gray-300 dark:text-slate-500"
+                title="Sent"
               />
             )}
-
-            {msg.audio && (
-              <button
-                onClick={() => togglePlayAudio(msg.audio)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer mb-1
-                  ${msg.sender === currentUser.uid 
-                    ? 'bg-blue-400 hover:bg-blue-300 dark:bg-blue-500 dark:hover:bg-blue-400' 
-                    : 'bg-gray-300 hover:bg-gray-400 dark:bg-slate-600 dark:hover:bg-slate-500'}`}
-              >
-                {isPlayingAudio && currentPlayingAudioUrl === msg.audio ? <FaPauseCircle /> : <FaPlayCircle />}
-                <span className="text-sm">Audio</span>
-              </button>
+            {msg.status === "delivered" && (
+              <FaCheckDouble
+                className="text-blue-300 dark:text-blue-400"
+                title="Delivered"
+              />
             )}
-
-            {msg.text && <p className="whitespace-pre-wrap break-words text-sm sm:text-base">{msg.text}</p>}
-            
-            <div className={`text-xs mt-1 flex items-center gap-1 ${msg.sender === currentUser.uid ? 'text-blue-100 dark:text-blue-300' : 'text-gray-500 dark:text-slate-400'} self-end`}>
-              {msg.edited && (
-                <span className="italic text-xs">(edited)</span>
-              )}
-              <span>
-                {msg.timestamp
-                  ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                  : "sending..."}
-              </span>
-              {msg.sender === currentUser.uid && (
-                <>
-                  {msg.status === "sent" && <FaCheckDouble className="text-gray-400 dark:text-slate-500" title="Sent"/>}
-                  {msg.status === "delivered" && <FaCheckDouble className="text-blue-300 dark:text-sky-300" title="Delivered"/>}
-                  {msg.status === "seen" && <FaCheckDouble className="text-green-300 dark:text-green-400" title="Seen"/>}
-                </>
-              )}
-            </div>
-
-            {/* Message actions */}
-            {longPressedMessageId === msg.id && (
-              <div className="absolute -top-10 right-0 sm:left-0 sm:-top-2 sm:group-hover:flex flex gap-1 bg-white dark:bg-slate-600 p-1 rounded-md shadow-lg z-10">
-                {msg.sender === currentUser.uid && (
-                  <>
-                    <button 
-                      onClick={() => { 
-                        setEditingMessageId(msg.id); 
-                        setLongPressedMessageId(null); 
-                      }} 
-                      className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-500 rounded"
-                      title="Edit"
-                    >
-                      <FaEdit className="text-blue-600 dark:text-blue-400" />
-                    </button>
-                    <button 
-                      onClick={handleDeleteMessage} 
-                      className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-500 rounded"
-                      title="Delete"
-                    >
-                      <FaTrashAlt className="text-red-600 dark:text-red-400" />
-                    </button>
-                  </>
-                )}
-                <button 
-                  onClick={() => togglePinMessage(msg.id)} 
-                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-500 rounded"
-                  title={pinnedMessages.some(m => m.messageId === msg.id) ? "Unpin" : "Pin"}
-                >
-                  <FaThumbtack className={`${pinnedMessages.some(m => m.messageId === msg.id) ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300'}`} />
-                </button>
-                <button 
-                  onClick={() => setLongPressedMessageId(null)} 
-                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-500 rounded"
-                  title="Close"
-                >
-                  <FaTimesCircle className="text-gray-500 dark:text-gray-300" />
-                </button>
-              </div>
+            {msg.status === "seen" && (
+              <FaCheckDouble
+                className="text-green-300 dark:text-green-400"
+                title="Seen"
+              />
             )}
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
+          </>
+        )}
       </div>
+
+      {/* Message Actions */}
+      {longPressedMessageId === msg.id && (
+        <div className="absolute -top-12 right-0 sm:left-0 sm:-top-2 flex gap-1 bg-white dark:bg-slate-700 p-2 rounded-xl shadow-lg z-10">
+          {msg.sender === currentUser.uid && (
+            <>
+              <button
+                onClick={() => {
+                  setEditingMessageId(msg.id);
+                  setLongPressedMessageId(null);
+                }}
+                className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg"
+                title="Edit"
+              >
+                <FaEdit className="text-blue-600 dark:text-blue-400" />
+              </button>
+              <button
+                onClick={handleDeleteMessage}
+                className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg"
+                title="Delete"
+              >
+                <FaTrashAlt className="text-red-600 dark:text-red-400" />
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => togglePinMessage(msg.id)}
+            className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg"
+            title={
+              pinnedMessages.some((m) => m.messageId === msg.id)
+                ? "Unpin"
+                : "Pin"
+            }
+          >
+            <FaThumbtack
+              className={`${
+                pinnedMessages.some((m) => m.messageId === msg.id)
+                  ? "text-blue-600 dark:text-blue-400"
+                  : "text-gray-500 dark:text-gray-300"
+              }`}
+            />
+          </button>
+          <button
+            onClick={() => setLongPressedMessageId(null)}
+            className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg"
+            title="Close"
+          >
+            <FaTimesCircle className="text-gray-500 dark:text-gray-300" />
+          </button>
+        </div>
+      )}
+    </div>
+  ))}
+  <div ref={messagesEndRef} />
+</div>
+
       
       {/* Message Editing Input */}
       {editingMessageId && (
