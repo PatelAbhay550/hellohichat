@@ -596,11 +596,11 @@ const ChatWithUser = () => {
   {messages.map((msg) => (
     <div
       key={msg.id}
-      className={`flex flex-col max-w-[80%] sm:max-w-[70%] p-3 rounded-2xl shadow-md group relative ${
-        msg.sender === currentUser.uid
-          ? "bg-blue-500 text-white self-end rounded-br-none"
-          : "bg-gray-100 dark:bg-slate-800 dark:text-slate-100 self-start rounded-bl-none"
-      }`}
+      className={`flex flex-col max-w-[80%] sm:max-w-[70%] p-3 rounded-2xl shadow-md group relative
+    ${msg.sender === currentUser.uid
+      ? 'self-end bg-blue-500 text-white rounded-br-none'
+      : 'self-start bg-gray-100 dark:bg-slate-800 dark:text-white rounded-bl-none'
+    }`}
       onContextMenu={(e) =>
         handleLongPress(e, msg.id, msg.text, msg.sender)
       }
