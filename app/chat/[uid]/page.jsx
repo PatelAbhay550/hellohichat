@@ -548,7 +548,7 @@ const ChatWithUser = () => {
         </button>
       </div>
 
-      {/* Pinned Messages Section */}
+      
       {pinnedMessages.length > 0 && (
         <div className="border-b border-gray-200 dark:border-slate-700 bg-blue-50 dark:bg-slate-750 p-2">
           <h3 className="text-xs font-semibold text-gray-500 dark:text-slate-400 mb-1 px-2">PINNED MESSAGES</h3>
@@ -586,7 +586,9 @@ const ChatWithUser = () => {
                   </button>
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {pinned.pinnedAt?.toDate?.().toLocaleString() || "Pinned recently"}
+                  {pinned.pinnedAt?.toDate
+                    ? pinned.pinnedAt.toDate().toLocaleDateString()
+                    : "Few seconds ago"}
                 </div>
               </div>
             ))}
