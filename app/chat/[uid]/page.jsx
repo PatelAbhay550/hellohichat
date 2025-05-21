@@ -505,7 +505,7 @@ const ChatWithUser = () => {
   };
 
   if (!currentUser) {
-    return <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-slate-900 text-gray-800 dark:text-gray-200">Loading user...</div>;
+    return <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-slate-900 text-gray-800 dark:text-gray-200">Chat Loading...</div>;
   }
 
   return (
