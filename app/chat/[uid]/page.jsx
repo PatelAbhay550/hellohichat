@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
+import { IoTrashBin } from "react-icons/io5";
 import { auth, db, storage } from "@/lib/firebase";
 import { IoIosArrowRoundBack } from "react-icons/io";
 import Link from "next/link";
@@ -527,7 +528,7 @@ const ChatWithUser = () => {
             </div>
           )}
           <div>
-            <h2 className="text-base sm:text-lg font-semibold text-gray-800 dark:text-white">
+            <h2 className="text-base sm:text-lg font-semibold text-gray-800 dark:text-black">
               {receiverData?.name || "User"}
             </h2>
             <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400">
@@ -578,7 +579,7 @@ const ChatWithUser = () => {
                     className="text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
                     title="Unpin message"
                   >
-                    <FaThumbtack size={14} />
+                    <IoTrashBin size={14} />
                   </button>
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -595,11 +596,7 @@ const ChatWithUser = () => {
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`flex flex-col max-w-[80%] sm:max-w-[70%] p-2.5 rounded-lg shadow ${
-              msg.sender === currentUser.uid
-                ? "bg-blue-500 text-white self-end rounded-br-none"
-                : "bg-gray-200 dark:bg-slate-700 dark:text-slate-100 self-start rounded-bl-none"
-            } relative group`}
+            className={`max-w-xs rounded-xl p-3 shadow ${msg.sender === currentUser.uid ? 'bg-blue-100 self-end' : 'bg-gray-100 self-start'}`}
             onContextMenu={(e) => handleLongPress(e, msg.id, msg.text, msg.sender)}
           >
             {/* Pin indicator for pinned messages */}
