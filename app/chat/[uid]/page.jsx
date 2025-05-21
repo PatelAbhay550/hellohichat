@@ -505,13 +505,13 @@ const ChatWithUser = () => {
   };
 
   if (!currentUser) {
-    return <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-slate-900 text-gray-800 dark:text-gray-200">Chat Loading...</div>;
+    return <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-slate-900 text-gray-800 dark:text-gray-200">Loading user...</div>;
   }
 
   return (
     <div className="flex flex-col h-screen max-w-3xl mx-auto bg-white dark:bg-slate-800 shadow-lg rounded-lg overflow-hidden">
       {/* Header */}
-      <div className="flex items-center p-3 sm:p-4 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-750">
+      <div className="flex items-center p-3 sm:p-4 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800">
         <Link href="/chats" className="text-2xl text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-500">
           <IoIosArrowRoundBack size={30} />
         </Link>
@@ -596,11 +596,11 @@ const ChatWithUser = () => {
   {messages.map((msg) => (
     <div
       key={msg.id}
-      className={`flex flex-col max-w-[80%] sm:max-w-[70%] p-3 rounded-2xl shadow-md group relative
-    ${msg.sender === currentUser.uid
-      ? 'self-end bg-blue-500 text-white rounded-br-none'
-      : 'self-start bg-gray-100 dark:bg-slate-800 dark:text-white rounded-bl-none'
-    }`}
+      className={`flex flex-col max-w-[80%] sm:max-w-[70%] p-3 rounded-2xl shadow-md group relative ${
+        msg.sender === currentUser.uid
+          ? "bg-blue-500 text-white self-end rounded-br-none"
+          : "bg-gray-100 dark:bg-slate-800 dark:text-slate-100 self-start rounded-bl-none"
+      }`}
       onContextMenu={(e) =>
         handleLongPress(e, msg.id, msg.text, msg.sender)
       }
