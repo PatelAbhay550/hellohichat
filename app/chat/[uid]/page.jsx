@@ -523,9 +523,10 @@ const ChatWithUser = () => {
               className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-gray-300 dark:border-slate-600"
             />
           ) : (
-            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gray-300 dark:bg-slate-600 flex items-center justify-center text-gray-600 dark:text-gray-300 font-bold text-xl">
-              {receiverData?.name?.[0]?.toUpperCase() || "U"}
-            </div>
+            <><div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gray-300 dark:bg-slate-600 flex items-center justify-center text-gray-600 dark:text-gray-300 font-bold text-xl">
+                {receiverData?.name?.[0]?.toUpperCase() || "U"}
+              </div>
+            </>
           )}
           <div>
             <h2 className="text-base sm:text-lg font-semibold text-gray-800 dark:text-white">
@@ -536,6 +537,7 @@ const ChatWithUser = () => {
             </p>
           </div>
         </div>
+
         <button
           onClick={toggleTheme}
           className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-600 dark:text-gray-300"
@@ -591,196 +593,240 @@ const ChatWithUser = () => {
         </div>
       )}
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto w-full p-4 space-y-3 bg-white dark:bg-[#0f172a]">
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.sender === currentUser.uid ? "justify-end" : "justify-start"} w-full`}
-          >
+      
+        <div className="flex-1 overflow-y-auto w-full p-4 space-y-3 bg-white dark:bg-[#0f172a]">
+          {/* Group messages by date */}
+          {(() => {
+            // Helper to format date header
+            const formatDateHeader = (date) => {
+          const today = new Date();
+          const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+          const nowDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+          const diffDays = Math.round((nowDate - msgDate) / (1000 * 60 * 60 * 24));
+          if (diffDays === 0) return "Today";
+          if (diffDays === 1) return "Yesterday";
+          if (diffDays < 7) {
+            return msgDate.toLocaleDateString(undefined, { weekday: "long" });
+          }
+          return msgDate.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit", year: "2-digit" });
+            };
+
+            // Group messages by date string
+            const grouped = {};
+            messages.forEach((msg) => {
+          const ts = msg.timestamp?.seconds
+            ? new Date(msg.timestamp.seconds * 1000)
+            : new Date();
+          const key = ts.toDateString();
+          if (!grouped[key]) grouped[key] = [];
+          grouped[key].push(msg);
+            });
+
+            const sortedKeys = Object.keys(grouped).sort(
+          (a, b) => new Date(a) - new Date(b)
+            );
+
+            return sortedKeys.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-gray-500 dark:text-slate-400">
+            <p className="text-sm">No messages yet. Start the conversation!</p>
+          </div>
+            ) : (
+          sortedKeys.map((dateKey) => (
+            <div key={dateKey}>
+              <div className="flex justify-center mb-2">
+            <span className="px-3 py-1 rounded-full bg-gray-200 dark:bg-slate-700 text-xs text-gray-600 dark:text-slate-300 font-medium">
+              {formatDateHeader(new Date(dateKey))}
+            </span>
+              </div>
+              {grouped[dateKey].map((msg) => (
             <div
-              className={`flex flex-col max-w-[90%] sm:max-w-[70%] p-3 rounded-2xl shadow-md group relative
-                ${msg.sender === currentUser.uid
-                  ? "bg-blue-500 text-white rounded-br-none"
-                  : "bg-gray-100 dark:bg-slate-800 dark:text-slate-100 rounded-bl-none"
+              key={msg.id}
+              className={`flex ${msg.sender === currentUser.uid ? "justify-end" : "justify-start"} w-full`}
+            >
+              <div
+                className={`flex flex-col max-w-[90%] sm:max-w-[70%] p-3 rounded-2xl shadow-md group relative
+              ${msg.sender === currentUser.uid
+                ? "bg-blue-500 text-white rounded-br-none"
+                : "bg-gray-100 dark:bg-slate-800 dark:text-slate-100 rounded-bl-none"
+              }
+                `}
+                onContextMenu={(e) =>
+              handleLongPress(e, msg.id, msg.text, msg.sender)
                 }
-              `}
-              onContextMenu={(e) =>
-                handleLongPress(e, msg.id, msg.text, msg.sender)
+              >
+                
+            {pinnedMessages.some((m) => m.messageId === msg.id) && (
+              <div className="absolute -top-2 -right-2 text-blue-600 dark:text-blue-400">
+            <FaThumbtack size={14} />
+              </div>
+            )}
+
+            {msg.image && (
+              <img
+            src={msg.image}
+            alt="sent"
+            className="rounded-md mb-2 cursor-pointer max-w-full max-h-60 object-cover"
+            onClick={() => window.open(msg.image, "_blank")}
+              />
+            )}
+
+            {msg.audio && (
+              <button
+            onClick={() => togglePlayAudio(msg.audio)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium mb-2 ${
+              msg.sender === currentUser.uid
+                ? "bg-blue-400 hover:bg-blue-300 dark:bg-blue-600 dark:hover:bg-blue-500"
+                : "bg-gray-300 hover:bg-gray-400 dark:bg-slate-600 dark:hover:bg-slate-500"
+            }`}
+              >
+            {isPlayingAudio && currentPlayingAudioUrl === msg.audio ? (
+              <FaPauseCircle />
+            ) : (
+              <FaPlayCircle />
+            )}
+            <span>Audio</span>
+              </button>
+            )}
+
+            {msg.text && (
+              <p className="whitespace-pre-wrap break-words text-sm sm:text-base leading-relaxed">
+            {msg.text}
+              </p>
+            )}
+
+            {/* Timestamp + status */}
+            <div
+              className={`text-xs mt-2 flex items-center gap-1 ${
+            msg.sender === currentUser.uid
+              ? "text-blue-100 dark:text-blue-300"
+              : "text-gray-500 dark:text-slate-400"
+              } self-end`}
+            >
+              {msg.edited && <span className="italic">(edited)</span>}
+              <span>
+            {msg.timestamp
+              ? new Date(
+              msg.timestamp.seconds * 1000
+                ).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+                })
+              : "sending..."}
+              </span>
+
+              {msg.sender === currentUser.uid && (
+            <>
+              {msg.status === "sent" && (
+                <FaCheckDouble
+              className="text-gray-300 dark:text-slate-500"
+              title="Sent"
+                />
+              )}
+              {msg.status === "delivered" && (
+                <FaCheckDouble
+              className="text-blue-300 dark:text-blue-400"
+              title="Delivered"
+                />
+              )}
+              {msg.status === "seen" && (
+                <FaCheckDouble
+              className="text-green-300 dark:text-green-400"
+              title="Seen"
+                />
+              )}
+            </>
+              )}
+            </div>
+
+            {/* Message Actions */}
+            {longPressedMessageId === msg.id && (
+              <div className="absolute -top-12 right-0 sm:left-0 sm:-top-2 flex gap-1 bg-white dark:bg-slate-700 p-2 rounded-xl shadow-lg z-10">
+            {msg.sender === currentUser.uid && (
+              <>
+                <button
+              onClick={() => {
+                setEditingMessageId(msg.id);
+                setLongPressedMessageId(null);
+              }}
+              className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg"
+              title="Edit"
+                >
+              <FaEdit className="text-blue-600 dark:text-blue-400" />
+                </button>
+                <button
+              onClick={handleDeleteMessage}
+              className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg"
+              title="Delete"
+                >
+              <FaTrashAlt className="text-red-600 dark:text-red-400" />
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => togglePinMessage(msg.id)}
+              className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg"
+              title={
+                pinnedMessages.some((m) => m.messageId === msg.id)
+              ? "Unpin"
+              : "Pin"
               }
             >
-              
-      {pinnedMessages.some((m) => m.messageId === msg.id) && (
-        <div className="absolute -top-2 -right-2 text-blue-600 dark:text-blue-400">
-          <FaThumbtack size={14} />
-        </div>
-      )}
-
-      {msg.image && (
-        <img
-          src={msg.image}
-          alt="sent"
-          className="rounded-md mb-2 cursor-pointer max-w-full max-h-60 object-cover"
-          onClick={() => window.open(msg.image, "_blank")}
-        />
-      )}
-
-      {msg.audio && (
-        <button
-          onClick={() => togglePlayAudio(msg.audio)}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium mb-2 ${
-            msg.sender === currentUser.uid
-              ? "bg-blue-400 hover:bg-blue-300 dark:bg-blue-600 dark:hover:bg-blue-500"
-              : "bg-gray-300 hover:bg-gray-400 dark:bg-slate-600 dark:hover:bg-slate-500"
-          }`}
-        >
-          {isPlayingAudio && currentPlayingAudioUrl === msg.audio ? (
-            <FaPauseCircle />
-          ) : (
-            <FaPlayCircle />
-          )}
-          <span>Audio</span>
-        </button>
-      )}
-
-      {msg.text && (
-        <p className="whitespace-pre-wrap break-words text-sm sm:text-base leading-relaxed">
-          {msg.text}
-        </p>
-      )}
-
-      {/* Timestamp + status */}
-      <div
-        className={`text-xs mt-2 flex items-center gap-1 ${
-          msg.sender === currentUser.uid
-            ? "text-blue-100 dark:text-blue-300"
-            : "text-gray-500 dark:text-slate-400"
-        } self-end`}
-      >
-        {msg.edited && <span className="italic">(edited)</span>}
-        <span>
-          {msg.timestamp
-            ? new Date(
-                msg.timestamp.seconds * 1000
-              ).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "sending..."}
-        </span>
-
-        {msg.sender === currentUser.uid && (
-          <>
-            {msg.status === "sent" && (
-              <FaCheckDouble
-                className="text-gray-300 dark:text-slate-500"
-                title="Sent"
-              />
-            )}
-            {msg.status === "delivered" && (
-              <FaCheckDouble
-                className="text-blue-300 dark:text-blue-400"
-                title="Delivered"
-              />
-            )}
-            {msg.status === "seen" && (
-              <FaCheckDouble
-                className="text-green-300 dark:text-green-400"
-                title="Seen"
-              />
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Message Actions */}
-      {longPressedMessageId === msg.id && (
-        <div className="absolute -top-12 right-0 sm:left-0 sm:-top-2 flex gap-1 bg-white dark:bg-slate-700 p-2 rounded-xl shadow-lg z-10">
-          {msg.sender === currentUser.uid && (
-            <>
-              <button
-                onClick={() => {
-                  setEditingMessageId(msg.id);
-                  setLongPressedMessageId(null);
-                }}
-                className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg"
-                title="Edit"
-              >
-                <FaEdit className="text-blue-600 dark:text-blue-400" />
-              </button>
-              <button
-                onClick={handleDeleteMessage}
-                className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg"
-                title="Delete"
-              >
-                <FaTrashAlt className="text-red-600 dark:text-red-400" />
-              </button>
-            </>
-          )}
-          <button
-            onClick={() => togglePinMessage(msg.id)}
-            className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg"
-            title={
+              <FaThumbtack
+                className={`${
               pinnedMessages.some((m) => m.messageId === msg.id)
-                ? "Unpin"
-                : "Pin"
-            }
+                ? "text-blue-600 dark:text-blue-400"
+                : "text-gray-500 dark:text-gray-300"
+                }`}
+              />
+            </button>
+            <button
+              onClick={() => setLongPressedMessageId(null)}
+              className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg"
+              title="Close"
+            >
+              <FaTimesCircle className="text-gray-500 dark:text-gray-300" />
+            </button>
+              </div>
+            )}
+          </div>
+          </div>
+              ))}
+            </div>
+          ))
+            );
+          })()}
+          <div ref={messagesEndRef} />
+
+           {editingMessageId && (
+        <div className="p-3 bg-gray-100 dark:bg-slate-700 border-t border-gray-300 dark:border-slate-600 flex items-center gap-2">
+          <input
+        type="text"
+        className="flex-1 p-2.5 rounded-lg border border-gray-300 dark:border-slate-500 bg-white dark:bg-slate-800 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+        value={editingMessageText}
+        onChange={(e) => setEditingMessageText(e.target.value)}
+        onKeyDown={(e) => { 
+          if (e.key === 'Enter') handleEditMessage(); 
+          if (e.key === "Escape") cancelEdit(); 
+        }}
+        autoFocus
+          />
+          <button
+        onClick={handleEditMessage}
+        className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
           >
-            <FaThumbtack
-              className={`${
-                pinnedMessages.some((m) => m.messageId === msg.id)
-                  ? "text-blue-600 dark:text-blue-400"
-                  : "text-gray-500 dark:text-gray-300"
-              }`}
-            />
+        Save
           </button>
           <button
-            onClick={() => setLongPressedMessageId(null)}
-            className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg"
-            title="Close"
+        onClick={cancelEdit}
+        className="px-4 py-2.5 bg-gray-400 text-white rounded-lg hover:bg-gray-500 dark:bg-slate-500 dark:hover:bg-slate-400"
           >
-            <FaTimesCircle className="text-gray-500 dark:text-gray-300" />
+        Cancel
           </button>
         </div>
       )}
-    </div>
-    </div>
-  ))}
-{messages.length === 0 && (
-  <div className="flex items-center justify-center h-full text-gray-500 dark:text-slate-400">
-    <p className="text-sm">No messages yet. Start the conversation!</p>
+       
   </div>
-)}
-<div ref={messagesEndRef} />
-
-
-     {editingMessageId && (
-  <div className="p-3 bg-gray-100 dark:bg-slate-700 border-t border-gray-300 dark:border-slate-600 flex items-center gap-2">
-    <input
-      type="text"
-      className="flex-1 p-2.5 rounded-lg border border-gray-300 dark:border-slate-500 bg-white dark:bg-slate-800 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-      value={editingMessageText}
-      onChange={(e) => setEditingMessageText(e.target.value)}
-      onKeyDown={(e) => { 
-        if (e.key === 'Enter') handleEditMessage(); 
-        if (e.key === "Escape") cancelEdit(); 
-      }}
-      autoFocus
-    />
-    <button
-      onClick={handleEditMessage}
-      className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-    >
-      Save
-    </button>
-    <button
-      onClick={cancelEdit}
-      className="px-4 py-2.5 bg-gray-400 text-white rounded-lg hover:bg-gray-500 dark:bg-slate-500 dark:hover:bg-slate-400"
-    >
-      Cancel
-    </button>
-  </div>
-)}
+      
 
       {/* Audio recording popup */}
       {showAudioPopup && (
@@ -918,7 +964,7 @@ const ChatWithUser = () => {
         </form>
       )}
     </div>
-    </div>
+   
   );
 };
 
