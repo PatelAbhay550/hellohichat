@@ -887,7 +887,7 @@ const ChatWithUser = () => {
       {!editingMessageId && (
         <form
           onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-          className="p-3 sm:p-4 border-t border-gray-200 dark:border-slate-700 flex items-end gap-2 sm:gap-3 bg-gray-50 dark:bg-slate-750"
+          className="p-3 sm:p-4 border-t border-gray-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white flex items-end gap-2 sm:gap-3 bg-gray-50 "
         >
           {!imagePreview && (
             <label
